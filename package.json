@@ -1,0 +1,21 @@
+{
+  "name": "map-tracker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Google Maps grid rank tracker — geodesic grid, per-coordinate local search, Place-ID matching, and Share-of-Local-Voice scoring.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "demo": "tsx src/demo.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

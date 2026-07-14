@@ -1,0 +1,10 @@
+# Cloudflare Pages config for the static heatmap viewer.
+#
+# Deploy the generated site (after `npm run demo` writes ./web):
+#   CLOUDFLARE_ACCOUNT_ID=<account> npx wrangler pages deploy web
+#
+# Auth: set CLOUDFLARE_API_TOKEN (recommended, scoped) OR the global-key pair
+# CLOUDFLARE_API_KEY + CLOUDFLARE_EMAIL. See docs/DEPLOY.md.
+name = "map-tracker"
+pages_build_output_dir = "web"
+compatibility_date = "2026-07-14"
