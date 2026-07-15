@@ -1,6 +1,8 @@
 node_modules/
 out/
 data/*.json
+web/demo.html
+web/report.html
 .env
 .env.local
 *.log

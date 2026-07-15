@@ -77,10 +77,10 @@ async function main(): Promise<void> {
   });
 
   await mkdir("web", { recursive: true });
-  await writeFile("web/index.html", html, "utf8");
+  await writeFile("web/demo.html", html, "utf8");
   await saveBundle("out/scan-bundle.json", { business: target, grid, scans, savedAt: clock() });
 
-  console.log("\nWrote web/index.html (deployable heatmap) and out/scan-bundle.json");
+  console.log("\nWrote web/demo.html (static heatmap) and out/scan-bundle.json");
 }
 
 main().catch((err) => {

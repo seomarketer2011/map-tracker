@@ -127,10 +127,10 @@ async function main(): Promise<void> {
     dataSource,
   });
   await mkdir("web", { recursive: true });
-  await writeFile("web/index.html", html, "utf8");
+  await writeFile("web/report.html", html, "utf8");
   await mkdir("out", { recursive: true });
   await writeFile(`out/track-${slug(config.businessName)}.json`, JSON.stringify(scan, null, 2), "utf8");
-  console.log("\nWrote web/index.html — deploy with: npx wrangler pages deploy web --project-name map-tracker");
+  console.log("\nWrote web/report.html — static heatmap for this scan.");
 }
 
 main().catch((err) => {
