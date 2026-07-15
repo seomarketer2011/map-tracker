@@ -157,7 +157,21 @@ function median(v: number[]): number | null {
   return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2;
 }
 
-export function scoreScan(points: ScoredPoint[], targetPlaceId?: string) {
+export interface TargetIdentity { placeId?: string | null; cid?: string | null; website?: string | null; name?: string | null }
+
+/** True if a result row is the tracked business itself (any stable signal). */
+export function isTarget(t: TargetIdentity, r: SerpBusiness): boolean {
+  if (t.placeId && r.placeId && r.placeId === t.placeId) return true;
+  if (t.cid && r.cid && r.cid === t.cid) return true;
+  const td = extractDomain(t.website ?? undefined);
+  if (td && extractDomain(r.website) === td) return true;
+  const tn = normalizeName(t.name ?? undefined);
+  if (tn && tn === normalizeName(r.name)) return true;
+  return false;
+}
+
+export function scoreScan(points: ScoredPoint[], target?: TargetIdentity | string) {
+  const tgt: TargetIdentity | undefined = typeof target === "string" ? { placeId: target } : target;
   const valid = points.filter((p) => p.observation.checkedDepth > 0);
   const n = valid.length || 1;
   const solv = valid.reduce((a, p) => a + visibilityWeight(p.observation.rank), 0) / n;
@@ -179,8 +193,8 @@ export function scoreScan(points: ScoredPoint[], targetPlaceId?: string) {
 
   const agg = new Map<string, { name: string; placeId?: string; positions: number[]; wins: number }>();
   for (const p of points) for (const r of p.results) {
-    if (targetPlaceId && r.placeId === targetPlaceId) continue;
-    const key = r.placeId ?? r.name.toLowerCase();
+    if (tgt && isTarget(tgt, r)) continue;
+    const key = r.placeId ?? r.cid ?? r.name.toLowerCase();
     const e = agg.get(key) ?? { name: r.name, placeId: r.placeId, positions: [], wins: 0 };
     e.positions.push(r.position); if (r.position === 1) e.wins++; agg.set(key, e);
   }
@@ -210,18 +224,22 @@ export function parseMapsItems(payload: any, depth: number): SerpBusiness[] {
   const task = payload?.tasks?.[0];
   if (task?.status_code && task.status_code >= 40000) throw new Error(`DataForSEO ${task.status_code}: ${task.status_message}`);
   const items = task?.result?.[0]?.items ?? [];
-  const out: SerpBusiness[] = [];
+  const collected: SerpBusiness[] = [];
   for (const it of items) {
+    if (it.is_paid) continue; // exclude local-pack ads — not organic rank
     const position = it.rank_absolute ?? it.rank_group;
     if (!position || !it.title) continue;
-    out.push({
-      position, name: it.title, placeId: it.place_id, cid: it.cid,
+    collected.push({
+      position, name: it.title, placeId: it.place_id ?? undefined, cid: it.cid,
       website: it.domain ?? it.url, phone: it.phone, address: it.address,
       rating: it.rating?.value, reviews: it.rating?.votes_count, lat: it.latitude, lng: it.longitude,
     });
-    if (out.length >= depth) break;
   }
-  return out.sort((a, b) => a.position - b.position);
+  // Renumber to clean, contiguous organic positions after removing ads.
+  return collected
+    .sort((a, b) => a.position - b.position)
+    .slice(0, depth)
+    .map((b, i) => ({ ...b, position: i + 1 }));
 }
 
 export function b64(s: string): string {
