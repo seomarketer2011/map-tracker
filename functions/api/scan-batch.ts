@@ -30,6 +30,7 @@ export const onRequestPost: PagesFunction<DBEnv> = async ({ request, env }) => {
       target: toTarget(cfg),
     },
     points,
+    MAX_BATCH, // fire the whole batch at once — batches also run in parallel client-side
   );
   // Strip the heavy full-results list; the client keeps observation + top 5.
   return json({ points: scanned.map(({ results, ...rest }) => rest) });

@@ -9,7 +9,27 @@ import { json } from "../_http";
 import { targetId, upsertTarget, listTargets, type DBEnv } from "../_db";
 
 export const onRequestGet: PagesFunction<DBEnv> = async ({ env }) => {
-  return json({ targets: await listTargets(env) });
+  const rows = await listTargets(env);
+  // Group tracked keywords under their business so a GBP appears once.
+  const byBusiness = new Map<string, any>();
+  for (const t of rows) {
+    const bk = t.business_key || t.place_id || t.website || t.name;
+    if (!byBusiness.has(bk)) {
+      byBusiness.set(bk, {
+        businessKey: bk, name: t.name, placeId: t.place_id, cid: t.cid, website: t.website,
+        lat: t.lat, lng: t.lng, keywords: [],
+      });
+    }
+    byBusiness.get(bk).keywords.push({
+      id: t.id, keyword: t.keyword, device: t.device, gridSize: t.grid_size, spacingM: t.spacing_m,
+      scanCount: t.scan_count, lastScan: t.last_scan, lastSolv: t.last_solv, autoWeekly: t.auto_weekly,
+    });
+  }
+  const businesses = [...byBusiness.values()].map((b) => {
+    b.keywords.sort((a: any, c: any) => a.keyword.localeCompare(c.keyword));
+    return b;
+  }).sort((a, b) => a.name.localeCompare(b.name));
+  return json({ businesses, targets: rows });
 };
 
 export const onRequestPost: PagesFunction<DBEnv> = async ({ request, env }) => {

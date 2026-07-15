@@ -22,6 +22,15 @@ export function targetId(key: string, keyword: string, device: string): string {
   return "t_" + fnv1a(`${key}|${keyword.toLowerCase().trim()}|${device}`);
 }
 
+function domainOf(u?: string | null): string {
+  return (u ?? "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0] ?? "";
+}
+
+/** Identifies the *business* (across keywords): Place ID, else website, else name. */
+export function businessKey(t: { place_id?: string | null; website?: string | null; name: string }): string {
+  return (t.place_id && t.place_id.trim()) || domainOf(t.website) || t.name.toLowerCase().trim();
+}
+
 export function randomId(prefix: string): string {
   // crypto.randomUUID is available in the Workers runtime.
   return prefix + "_" + (globalThis.crypto?.randomUUID?.() ?? fnv1a(String(Math.random())));
@@ -35,15 +44,17 @@ export interface TargetRow {
 }
 
 export async function upsertTarget(env: DBEnv, t: Omit<TargetRow, "created_at">, nowIso: string): Promise<void> {
+  const bkey = businessKey(t);
   await env.DB.prepare(
-    `INSERT INTO targets (id,name,place_id,cid,website,phone,lat,lng,keyword,device,grid_size,spacing_m,language_code,auto_weekly,created_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `INSERT INTO targets (id,name,place_id,cid,website,phone,lat,lng,keyword,device,grid_size,spacing_m,language_code,auto_weekly,business_key,created_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET name=excluded.name, place_id=excluded.place_id, cid=excluded.cid,
        website=excluded.website, phone=excluded.phone, lat=excluded.lat, lng=excluded.lng,
-       grid_size=excluded.grid_size, spacing_m=excluded.spacing_m, language_code=excluded.language_code`,
+       grid_size=excluded.grid_size, spacing_m=excluded.spacing_m, language_code=excluded.language_code,
+       business_key=excluded.business_key`,
   ).bind(
     t.id, t.name, t.place_id, t.cid, t.website, t.phone, t.lat, t.lng, t.keyword, t.device,
-    t.grid_size, t.spacing_m, t.language_code, t.auto_weekly, nowIso,
+    t.grid_size, t.spacing_m, t.language_code, t.auto_weekly, bkey, nowIso,
   ).run();
 }
 
