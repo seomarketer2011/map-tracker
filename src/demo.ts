@@ -73,6 +73,7 @@ async function main(): Promise<void> {
     business: { name: target.name, placeId: target.placeId, location: target.location },
     scans,
     generatedLabel: "demo · mock provider · 2026-07-14",
+    dataSource: "preview",
   });
 
   await mkdir("web", { recursive: true });

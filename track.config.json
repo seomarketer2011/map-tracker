@@ -1,0 +1,23 @@
+{
+  "businessName": "Your Business Name (as shown on Google)",
+  "placeId": "",
+  "website": "",
+  "phone": "",
+  "keyword": "your keyword here",
+  "center": { "lat": 51.507421, "lng": -0.127684 },
+  "gridSize": 13,
+  "spacingM": 500,
+  "device": "mobile",
+  "languageCode": "en",
+  "countryCode": "GB",
+  "zoom": 15,
+  "depth": 20,
+  "_help": {
+    "businessName": "Exact name of your Google Business Profile listing.",
+    "placeId": "Optional but STRONGLY recommended for reliable matching. Get it from a Places API lookup or a Place ID finder. Leave blank to match by name.",
+    "center": "Latitude/longitude of your business. In Google Maps, right-click your pin -> the lat,lng is at the top of the menu. This centres the grid.",
+    "gridSize": "Odd number. 9 = 9x9 (81 points), 13 = 13x13 (169 points). Cost = gridSize^2 SERP calls.",
+    "spacingM": "Metres between pins. 500 is a good default.",
+    "device": "'mobile' or 'desktop'. Track separately, don't mix."
+  }
+}

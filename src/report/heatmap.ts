@@ -16,6 +16,8 @@ export interface ReportBundle {
   business: { name: string; placeId?: string; location?: { lat: number; lng: number } };
   scans: ScanResult[];
   generatedLabel: string;
+  /** "live" = real SERP provider; "preview" = mock/synthetic data. */
+  dataSource: "live" | "preview";
 }
 
 export function renderHeatmapHtml(bundle: ReportBundle): string {
@@ -36,6 +38,10 @@ export function renderHeatmapHtml(bundle: ReportBundle): string {
   #map { height: 100vh; }
   h1 { font-size: 17px; margin: 0 0 2px; }
   .muted { color: #7a7a7a; font-size: 12px; }
+  .badge { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .04em;
+           padding: 3px 8px; border-radius: 6px; margin: 6px 0; }
+  .badge.live { background: #1a9850; color: #fff; }
+  .badge.preview { background: #f0ad4e22; color: #b8860b; border: 1px solid #f0ad4e88; }
   select { width: 100%; padding: 8px; margin: 12px 0; border-radius: 8px; border: 1px solid #8886; background: transparent; color: inherit; }
   .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0; }
   .metric { background: #8881; border-radius: 10px; padding: 10px; }
@@ -56,6 +62,11 @@ export function renderHeatmapHtml(bundle: ReportBundle): string {
 <div id="app">
   <div id="panel">
     <h1>${escapeHtml(bundle.business.name)}</h1>
+    ${
+      bundle.dataSource === "live"
+        ? '<div class="badge live">LIVE DATA</div>'
+        : '<div class="badge preview">PREVIEW — sample data, not live Google results</div>'
+    }
     <div class="muted">Google Maps grid rank tracker · ${escapeHtml(bundle.generatedLabel)}</div>
     <select id="keyword"></select>
     <div class="metrics" id="metrics"></div>
