@@ -23,6 +23,15 @@
   button.mini { width:auto; padding:4px 10px; font-size:12px; cursor:pointer; }
   button.mini.danger { border-color:#d3333366; color:#d33; }
   button.mini.danger:hover { background:#d3331a; }
+  button.mini.danger.solid { background:#d33; color:#fff; border:none; }
+  button.mini.danger.solid:hover { background:#b71c1c; }
+  .modal-overlay { position:fixed; inset:0; background:#0008; display:flex; align-items:center; justify-content:center; z-index:2000; padding:20px; }
+  .modal-overlay.hidden { display:none; }
+  .modal { background:Canvas; color:CanvasText; border:1px solid var(--line); border-radius:14px; padding:22px; max-width:380px; width:100%; box-shadow:0 16px 50px #0006; }
+  .modal-title { font-weight:700; font-size:16px; margin-bottom:8px; }
+  .modal-msg { font-size:14px; color:inherit; margin-bottom:18px; line-height:1.5; }
+  .modal-actions { display:flex; gap:10px; justify-content:flex-end; }
+  .modal-actions button { width:auto; padding:9px 18px; font-size:13px; }
   .nav { display:flex; border-bottom:1px solid var(--line); position:sticky; top:0; background:Canvas; z-index:500; }
   .nav button { border:none; border-radius:0; background:transparent; padding:12px 6px; font-size:13px; color:var(--muted); border-bottom:2px solid transparent; cursor:pointer; }
   .nav button.active { color:inherit; border-bottom-color:var(--accent); font-weight:600; }
@@ -186,6 +195,17 @@
   <div id="map"></div>
 </div>
 
+<div id="modal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-title" id="modalTitle">Confirm deletion</div>
+    <div class="modal-msg" id="modalMsg"></div>
+    <div class="modal-actions">
+      <button class="mini" id="modalCancel">Cancel</button>
+      <button class="mini danger solid" id="modalOk">Delete</button>
+    </div>
+  </div>
+</div>
+
 <script src="./vendor/leaflet.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
@@ -198,6 +218,17 @@ function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","
 function pct(x){return (x*100).toFixed(0)+"%";}
 function domainOf(u){return (u||"").trim().toLowerCase().replace(/^https?:\/\//,"").replace(/^www\./,"").split("/")[0];}
 function debounce(fn,ms){let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms);};}
+// In-app confirmation modal (returns a promise; replaces window.confirm for deletes).
+function confirmDialog(message,{title="Confirm deletion",okLabel="Delete"}={}){
+  return new Promise(resolve=>{
+    $("modalTitle").textContent=title; $("modalMsg").textContent=message; $("modalOk").textContent=okLabel;
+    $("modal").classList.remove("hidden");
+    const close=(v)=>{ $("modal").classList.add("hidden"); $("modalOk").onclick=null; $("modalCancel").onclick=null; $("modal").onclick=null; resolve(v); };
+    $("modalOk").onclick=()=>close(true);
+    $("modalCancel").onclick=()=>close(false);
+    $("modal").onclick=(e)=>{ if(e.target.id==="modal") close(false); }; // click backdrop = cancel
+  });
+}
 function colorFor(rank){ if(rank==null)return"#9e9e9e"; if(rank<=3)return"#1a9850"; if(rank<=10)return"#fee08b"; if(rank<=20)return"#f46d43"; return"#9e9e9e"; }
 
 let map=null, layer=null, chosen=null, currentTargetId=null, historyData=null;
@@ -378,11 +409,13 @@ async function loadBusinesses(){
   });
   $("targetList").querySelectorAll("[data-delbiz]").forEach(b=>b.onclick=async(e)=>{
     e.stopPropagation();
-    if(!confirm("Delete this WHOLE business and every keyword + scan under it?"))return;
+    const bz=businesses.find(x=>x.businessKey===b.dataset.delbiz);
+    const n=bz?bz.keywords.length:0;
+    if(!await confirmDialog("Delete “"+(bz?bz.name:"this business")+"” and all "+n+" keyword"+(n===1?"":"s")+" plus every scan under it? This cannot be undone.",{title:"Delete whole business",okLabel:"Delete business"}))return;
     await api.del("/api/targets?businessKey="+encodeURIComponent(b.dataset.delbiz)); loadBusinesses();
   });
 }
-async function delTarget(id){ if(!confirm("Delete this keyword and its scan history?"))return; await api.del("/api/targets?id="+id); loadBusinesses(); }
+async function delTarget(id){ if(!await confirmDialog("Delete this keyword and its scan history? This cannot be undone."))return; await api.del("/api/targets?id="+id); loadBusinesses(); }
 $("importBtn").onclick=async()=>{
   const rows=$("csv").value.trim().split("\n").map(l=>l.split(",").map(x=>x.trim())).filter(r=>r.length>=4);
   const targets=rows.map(r=>({name:r[0],keyword:r[1],lat:+r[2],lng:+r[3],website:r[4]||undefined,placeId:r[5]||undefined,device:r[6]||"mobile"}));
@@ -400,7 +433,7 @@ async function loadHistory(targetId){
   $("histTitle").textContent=target.name+' · "'+target.keyword+'"';
   $("histBody").classList.remove("hidden");
   $("delFromHistory").onclick=async()=>{
-    if(!confirm('Delete keyword "'+target.keyword+'" for '+target.name+' and its history?'))return;
+    if(!await confirmDialog('Delete keyword “'+target.keyword+'” for '+target.name+' and its scan history? This cannot be undone.'))return;
     await api.del("/api/targets?id="+targetId); showView("businesses");
   };
   drawTrend(scans);
