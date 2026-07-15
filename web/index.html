@@ -198,6 +198,11 @@ function debounce(fn,ms){let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>f
 function colorFor(rank){ if(rank==null)return"#9e9e9e"; if(rank<=3)return"#1a9850"; if(rank<=10)return"#fee08b"; if(rank<=20)return"#f46d43"; return"#9e9e9e"; }
 
 let map=null, layer=null, chosen=null, currentTargetId=null, historyData=null;
+// Only one context may own the map at a time. A background scan draws only while
+// it still owns the map, so navigating away can't get its pins painted onto
+// another view. scanView holds the current/last Scan-tab render for redraw.
+let mapOwner=0, scanView=null, scanRunning=false;
+const takeMap=()=>++mapOwner;
 
 if (typeof L!=="undefined"){
   map=L.map("map").setView([51.5,-0.12],6);
@@ -214,6 +219,14 @@ function showView(v){
   if(v==="businesses") loadBusinesses();
   if(v==="alerts") loadAlerts();
   if(v==="history" && currentTargetId) loadHistory(currentTargetId);
+  // Returning to the Scan tab while (or after) a scan ran: re-own the map and
+  // repaint that scan's pins, so it's never showing another view's map.
+  if(v==="scan" && scanView){
+    scanView.owner=takeMap();
+    if(layer)layer.clearLayers();
+    if(map&&scanView.center)map.setView(scanView.center,scanView.zoom||12);
+    scanView.pins.forEach(drawPin);
+  }
 }
 
 // ---- typeahead + scan ----
@@ -238,11 +251,12 @@ function choose(s){
   chosen=s; $("suggest-list").style.display="none"; $("q").value=s.name;
   $("chosen").innerHTML='<div class="chosen"><div class="n">'+esc(s.name)+' <button class="mini" id="clearBiz" style="float:right">✕ change</button></div><div class="a">'+esc(s.address||"")+'</div><div class="ids">'+(s.domain?'site: '+esc(s.domain)+' · ':'')+'Place ID: '+esc(s.placeId||"—")+'</div></div>';
   $("clearBiz").onclick=clearChosen;
+  scanView=null; takeMap();
   if(map&&s.lat&&s.lng){map.setView([s.lat,s.lng],13);layer.clearLayers();L.marker([s.lat,s.lng]).addTo(layer);}
   ready();
 }
 function clearChosen(){
-  chosen=null; $("chosen").innerHTML=""; $("q").value=""; $("website").value=""; $("keyword").value="";
+  chosen=null; scanView=null; takeMap(); $("chosen").innerHTML=""; $("q").value=""; $("website").value=""; $("keyword").value="";
   $("suggest-list").style.display="none"; if(layer)layer.clearLayers(); if(map)map.setView([53.4,-2.98],10);
   $("scanResult").classList.add("hidden"); $("status").textContent=""; $("err").textContent=""; ready(); $("q").focus();
 }
@@ -255,13 +269,14 @@ $("keyword").addEventListener("input",ready); ["gridSize","spacingM","device"].f
 const BATCH=40;
 // Scan one keyword: fire all batches in PARALLEL for speed, render pins as they arrive.
 async function scanOneKeyword(keyword, points, gs, spacingM, device, biz, total, onProgress){
-  if(layer)layer.clearLayers(); if(map)map.setView([biz.lat,biz.lng],13);
+  scanView={owner:takeMap(), center:[biz.lat,biz.lng], zoom:(map?map.getZoom():12), pins:[]};
+  if(layer)layer.clearLayers(); if(map)map.setView(scanView.center,map.getZoom());
   const collected=[]; let done=0;
   const batches=[]; for(let i=0;i<points.length;i+=BATCH) batches.push(points.slice(i,i+BATCH));
   await Promise.all(batches.map(async slice=>{
     const res=await api.post("/api/scan-batch",{...biz,keyword,device,points:slice});
     if(res.error) throw new Error(res.error);
-    res.points.forEach(p=>{collected.push(p);drawPin(p);});
+    res.points.forEach(p=>{collected.push(p);scanView.pins.push(p);if(mapOwner===scanView.owner)drawPin(p);});
     done+=slice.length; onProgress(done);
   }));
   const saved=await api.post("/api/scan-save",{...biz,keyword,device,gridSize:gs,spacingM,points:collected});
@@ -274,7 +289,7 @@ $("run").onclick=async()=>{
   if(!keywords.length){$("err").textContent="Enter at least one keyword";return;}
   const gs=+$("gridSize").value, spacingM=+$("spacingM").value, device=$("device").value;
   const biz={name:chosen.name,placeId:chosen.placeId,cid:chosen.cid,website:chosen.domain,phone:chosen.phone,lat:chosen.lat,lng:chosen.lng};
-  $("run").disabled=true; $("scanResult").classList.add("hidden");
+  $("run").disabled=true; scanRunning=true; $("scanResult").classList.add("hidden");
   try{
     $("status").innerHTML='<span class="spin"></span>Planning grid…';
     const plan=await api.post("/api/scan-plan",{lat:chosen.lat,lng:chosen.lng,gridSize:gs,spacingM});
@@ -292,8 +307,9 @@ $("run").onclick=async()=>{
     $("competitors").innerHTML=c?"<b>Top competitor:</b> "+esc(c.name)+" — wins "+c.wins+" pins":"";
     $("status").textContent="Saved "+keywords.length+" keyword"+(keywords.length>1?"s":"")+" to history · "+total+" points each";
   }catch(e){$("status").textContent="";$("err").textContent="Scan failed: "+e.message;}
-  finally{$("run").disabled=false;}
+  finally{$("run").disabled=false; scanRunning=false;}
 };
+window.addEventListener("beforeunload",(e)=>{ if(scanRunning){ e.preventDefault(); e.returnValue=""; } });
 function drawPin(p){
   if(!layer)return;
   const rank=p.observation.rank, label=rank==null?"×":String(rank);
@@ -308,7 +324,7 @@ $("toHistory").onclick=()=>showView("history");
 function absLegend(){return '<span><i class="dot" style="background:#1a9850"></i>1–3</span><span><i class="dot" style="background:#fee08b"></i>4–10</span><span><i class="dot" style="background:#f46d43"></i>11–20</span><span><i class="dot" style="background:#9e9e9e"></i>20+/none</span>';}
 
 function renderAbsolute(points){
-  if(!layer)return; layer.clearLayers();
+  if(!layer)return; takeMap(); layer.clearLayers();
   const c=centre(points); if(c)map.setView([c.lat,c.lng],13);
   points.forEach(p=>{
     const rank=p.observation.rank, label=rank==null?"×":String(rank);
@@ -389,7 +405,7 @@ $("cmpBtn").onclick=async()=>{
 };
 function key(p){return p.row+","+p.col;}
 function renderDiff(A,B){
-  if(!layer)return; layer.clearLayers();
+  if(!layer)return; takeMap(); layer.clearLayers();
   const amap={}; A.points.forEach(p=>amap[key(p)]=p);
   const c=centre(B.points); if(c)map.setView([c.lat,c.lng],13);
   B.points.forEach(p=>{
