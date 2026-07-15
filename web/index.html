@@ -6,114 +6,152 @@
 <title>Local Grid Rank Tracker</title>
 <link rel="stylesheet" href="./vendor/leaflet.css" />
 <style>
-  :root { color-scheme: light dark; --line:#8883; --muted:#7a7a7a; --accent:#1a73e8; }
+  :root { color-scheme: light dark; --line:#8883; --muted:#7a7a7a; --accent:#1a73e8; --good:#1a9850; --bad:#d33; }
   * { box-sizing: border-box; }
   body { margin:0; font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
-  #app { display:grid; grid-template-columns:380px 1fr; height:100vh; }
-  #panel { padding:20px; overflow-y:auto; border-right:1px solid var(--line); }
+  #app { display:grid; grid-template-columns:400px 1fr; height:100vh; }
+  #panel { padding:0 0 40px; overflow-y:auto; border-right:1px solid var(--line); }
   #map { height:100vh; background:#8881; }
-  h1 { font-size:18px; margin:0 0 2px; }
-  h2 { font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:22px 0 8px; }
+  .pad { padding:0 18px; }
+  h1 { font-size:17px; margin:14px 0 2px; }
+  h2 { font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:20px 0 8px; }
   label { display:block; font-size:12px; color:var(--muted); margin:10px 0 4px; }
-  input, select, button { width:100%; padding:9px 10px; border-radius:8px; border:1px solid #8886; background:transparent; color:inherit; font-size:14px; }
-  button.primary { background:var(--accent); color:#fff; border:none; font-weight:600; cursor:pointer; margin-top:14px; }
+  input, select, button, textarea { width:100%; padding:9px 10px; border-radius:8px; border:1px solid #8886; background:transparent; color:inherit; font-size:14px; font-family:inherit; }
+  button.primary { background:var(--accent); color:#fff; border:none; font-weight:600; cursor:pointer; margin-top:12px; }
   button.primary:disabled { opacity:.5; cursor:not-allowed; }
+  button.mini { width:auto; padding:4px 10px; font-size:12px; cursor:pointer; }
+  .nav { display:flex; border-bottom:1px solid var(--line); position:sticky; top:0; background:Canvas; z-index:500; }
+  .nav button { border:none; border-radius:0; background:transparent; padding:12px 6px; font-size:13px; color:var(--muted); border-bottom:2px solid transparent; cursor:pointer; }
+  .nav button.active { color:inherit; border-bottom-color:var(--accent); font-weight:600; }
+  .nav button .n { display:inline-block; min-width:16px; font-size:10px; background:var(--accent); color:#fff; border-radius:8px; padding:0 5px; margin-left:3px; }
   .badge { display:inline-block; font-size:11px; font-weight:700; letter-spacing:.04em; padding:3px 8px; border-radius:6px; margin:6px 0; }
-  .badge.live { background:#1a9850; color:#fff; }
-  .row { display:flex; gap:8px; }
-  .row > * { flex:1; }
+  .badge.live { background:var(--good); color:#fff; }
+  .row { display:flex; gap:8px; } .row > * { flex:1; }
   .suggest { position:relative; }
   .suggest-list { position:absolute; z-index:1000; left:0; right:0; background:Canvas; border:1px solid var(--line); border-radius:8px; margin-top:4px; max-height:280px; overflow-y:auto; box-shadow:0 8px 24px #0002; }
   .suggest-item { padding:9px 10px; cursor:pointer; border-bottom:1px solid var(--line); }
   .suggest-item:hover, .suggest-item.match { background:#1a73e814; }
-  .suggest-item .n { font-weight:600; }
-  .suggest-item .a { font-size:12px; color:var(--muted); }
-  .suggest-item .m { font-size:11px; color:#1a9850; font-weight:600; }
+  .suggest-item .n { font-weight:600; } .suggest-item .a { font-size:12px; color:var(--muted); }
+  .suggest-item .m { font-size:11px; color:var(--good); font-weight:600; }
   .chosen { border:1px solid #1a9850aa; background:#1a985012; border-radius:10px; padding:12px; margin-top:8px; }
-  .chosen .n { font-weight:700; }
-  .chosen .a { font-size:12px; color:var(--muted); }
+  .chosen .n { font-weight:700; } .chosen .a { font-size:12px; color:var(--muted); }
   .chosen .ids { font-size:11px; color:var(--muted); margin-top:4px; word-break:break-all; }
   .metrics { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:10px 0; }
   .metric { background:#8881; border-radius:10px; padding:10px; }
-  .metric .v { font-size:20px; font-weight:650; }
-  .metric .k { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; }
+  .metric .v { font-size:19px; font-weight:650; } .metric .k { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; }
+  .metric .d { font-size:12px; font-weight:600; } .up { color:var(--good); } .down { color:var(--bad); }
   .legend span { display:inline-flex; align-items:center; gap:6px; margin-right:12px; font-size:12px; }
   .dot { width:14px; height:14px; border-radius:50%; display:inline-block; border:1px solid #0004; }
   .note { font-size:12px; color:var(--muted); }
-  .err { color:#d33; font-size:13px; margin-top:8px; }
+  .err { color:var(--bad); font-size:13px; margin-top:8px; }
+  .item { border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-bottom:8px; cursor:pointer; }
+  .item:hover { background:#8881; } .item .t { font-weight:600; } .item .s { font-size:12px; color:var(--muted); }
+  .scanrow { display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid var(--line); font-size:13px; }
+  .scanrow .when { flex:1; } .scanrow .sv { color:var(--muted); }
   .leaflet-tooltip.pin-label { background:transparent; border:none; box-shadow:none; padding:0; font-weight:700; color:#1a1a1a; font-size:11px; }
   .leaflet-tooltip.pin-label::before { display:none; }
   #status { font-size:13px; color:var(--muted); margin-top:10px; }
   .spin { display:inline-block; width:12px; height:12px; border:2px solid #8884; border-top-color:var(--accent); border-radius:50%; animation:s .8s linear infinite; vertical-align:-2px; margin-right:6px; }
   @keyframes s { to { transform:rotate(360deg); } }
+  .hidden { display:none; }
+  .alert { border-left:3px solid #f0ad4e; background:#f0ad4e14; padding:8px 10px; border-radius:6px; margin-bottom:8px; font-size:13px; }
+  .anno { font-size:12px; padding:5px 0; border-bottom:1px solid var(--line); display:flex; gap:8px; }
+  .anno .dt { color:var(--muted); white-space:nowrap; }
+  svg.trend { width:100%; height:70px; overflow:visible; }
 </style>
 </head>
 <body>
 <div id="app">
   <div id="panel">
-    <h1>Local Grid Rank Tracker</h1>
-    <div class="badge live">LIVE · Google Maps</div>
-
-    <h2>1 · Find your listing</h2>
-    <div class="suggest">
-      <label>Business name (start typing)</label>
-      <input id="q" autocomplete="off" placeholder="e.g. BR1 Locksmith Bickley" />
-      <div id="suggest-list" class="suggest-list" style="display:none"></div>
-    </div>
-    <label>Website (optional — auto-picks the right listing)</label>
-    <input id="website" autocomplete="off" placeholder="br1locksmithbickley.co.uk" />
-    <div id="chosen"></div>
-
-    <h2>2 · Keyword &amp; grid</h2>
-    <label>Keyword to track</label>
-    <input id="keyword" autocomplete="off" placeholder="emergency locksmith" />
-    <div class="row">
-      <div>
-        <label>Grid</label>
-        <select id="gridSize">
-          <option value="5">5×5 (25 pts)</option>
-          <option value="7" selected>7×7 (49 pts)</option>
-          <option value="9">9×9 (81 pts)*</option>
-        </select>
-      </div>
-      <div>
-        <label>Spacing</label>
-        <select id="spacingM">
-          <option value="250">250 m</option>
-          <option value="500" selected>500 m</option>
-          <option value="1000">1 km</option>
-        </select>
-      </div>
-      <div>
-        <label>Device</label>
-        <select id="device">
-          <option value="mobile" selected>Mobile</option>
-          <option value="desktop">Desktop</option>
-        </select>
-      </div>
-    </div>
-    <div id="cost" class="note" style="margin-top:8px"></div>
-    <button id="run" class="primary" disabled>Run live scan</button>
-    <div id="status"></div>
-    <div id="err" class="err"></div>
-
-    <div id="results" style="display:none">
-      <h2>Results</h2>
-      <div class="metrics" id="metrics"></div>
-      <div class="legend">
-        <span><i class="dot" style="background:#1a9850"></i>1–3</span>
-        <span><i class="dot" style="background:#fee08b"></i>4–10</span>
-        <span><i class="dot" style="background:#f46d43"></i>11–20</span>
-        <span><i class="dot" style="background:#9e9e9e"></i>20+/none</span>
-      </div>
-      <div id="competitors" class="note"></div>
+    <div class="nav">
+      <button data-view="scan" class="active">Scan</button>
+      <button data-view="businesses">Businesses</button>
+      <button data-view="history">History</button>
+      <button data-view="alerts">Alerts<span id="alertBadge" class="n hidden">0</span></button>
     </div>
 
-    <p class="note" style="margin-top:20px">
-      *9×9 may exceed the free-tier per-request limit. Standardised, signed-out,
-      non-personalised measurement — a repeatable relative signal, not any single
-      user's live result.
-    </p>
+    <!-- SCAN -->
+    <div id="view-scan" class="view pad">
+      <h1>New scan</h1>
+      <div class="badge live">LIVE · Google Maps</div>
+      <h2>1 · Find your listing</h2>
+      <div class="suggest">
+        <label>Business name (start typing)</label>
+        <input id="q" autocomplete="off" placeholder="e.g. BR1 Locksmith Bickley" />
+        <div id="suggest-list" class="suggest-list" style="display:none"></div>
+      </div>
+      <label>Website (optional — auto-picks the right listing)</label>
+      <input id="website" autocomplete="off" placeholder="br1locksmithbickley.co.uk" />
+      <div id="chosen"></div>
+      <h2>2 · Keyword &amp; grid</h2>
+      <label>Keyword to track</label>
+      <input id="keyword" autocomplete="off" placeholder="emergency locksmith" />
+      <div class="row">
+        <div><label>Grid</label><select id="gridSize"><option value="5">5×5</option><option value="7" selected>7×7</option></select></div>
+        <div><label>Spacing</label><select id="spacingM"><option value="250">250 m</option><option value="500" selected>500 m</option><option value="1000">1 km</option></select></div>
+        <div><label>Device</label><select id="device"><option value="mobile" selected>Mobile</option><option value="desktop">Desktop</option></select></div>
+      </div>
+      <div id="cost" class="note" style="margin-top:8px"></div>
+      <button id="run" class="primary" disabled>Run live scan</button>
+      <div id="status"></div>
+      <div id="err" class="err"></div>
+      <div id="scanResult" class="hidden">
+        <h2>Result <button class="mini" id="toHistory" style="float:right">View history →</button></h2>
+        <div class="metrics" id="metrics"></div>
+        <div class="legend" id="legendAbs"></div>
+        <div id="competitors" class="note"></div>
+      </div>
+    </div>
+
+    <!-- BUSINESSES -->
+    <div id="view-businesses" class="view pad hidden">
+      <h1>Tracked businesses</h1>
+      <div id="targetList"><div class="note">Loading…</div></div>
+      <h2>Bulk import (CSV)</h2>
+      <p class="note">Columns: name, keyword, lat, lng, website, placeId, device. One business per row.</p>
+      <textarea id="csv" rows="4" placeholder="BR1 Locksmith Bickley, emergency locksmith, 51.40, 0.05, br1locksmithbickley.co.uk"></textarea>
+      <button class="mini" id="importBtn" style="margin-top:8px">Import</button>
+      <span id="importMsg" class="note"></span>
+    </div>
+
+    <!-- HISTORY -->
+    <div id="view-history" class="view pad hidden">
+      <h1 id="histTitle">History</h1>
+      <div id="histEmpty" class="note">Select a business, or run a scan first.</div>
+      <div id="histBody" class="hidden">
+        <h2>Share of Local Voice over time</h2>
+        <svg class="trend" id="trend"></svg>
+        <div class="note" id="trendLabel"></div>
+        <h2>Compare two scans</h2>
+        <div class="row">
+          <div><label>Baseline (A)</label><select id="cmpA"></select></div>
+          <div><label>Latest (B)</label><select id="cmpB"></select></div>
+        </div>
+        <button class="primary" id="cmpBtn">Compare on map</button>
+        <div id="cmpMetrics"></div>
+        <div class="legend hidden" id="legendDiff">
+          <span><i class="dot" style="background:#1a9850"></i>Improved</span>
+          <span><i class="dot" style="background:#9e9e9e"></i>Same</span>
+          <span><i class="dot" style="background:#d33"></i>Worse</span>
+        </div>
+        <h2>Scans</h2>
+        <div id="scanList"></div>
+        <h2>Notes / actions timeline</h2>
+        <div class="row">
+          <input type="date" id="annoDate" style="flex:0 0 140px" />
+          <input id="annoText" placeholder="e.g. added 15 photos, changed category" />
+        </div>
+        <button class="mini" id="annoAdd" style="margin-top:6px">Add note</button>
+        <div id="annoList" style="margin-top:10px"></div>
+      </div>
+    </div>
+
+    <!-- ALERTS -->
+    <div id="view-alerts" class="view pad hidden">
+      <h1>Alerts</h1>
+      <p class="note">Raised automatically by the weekly scan when Share of Local Voice drops ≥10 points or you fall out of the local 3-pack.</p>
+      <div id="alertList"><div class="note">Loading…</div></div>
+    </div>
   </div>
   <div id="map"></div>
 </div>
@@ -121,136 +159,207 @@
 <script src="./vendor/leaflet.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
-let chosen = null;
-let map = null, layer = null;
+const api = {
+  get: (u) => fetch(u).then(r => r.json()),
+  post: (u, b) => fetch(u, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(b) }).then(r => r.json()),
+  del: (u) => fetch(u, { method:"DELETE" }).then(r => r.json()),
+};
+function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+function pct(x){return (x*100).toFixed(0)+"%";}
+function domainOf(u){return (u||"").trim().toLowerCase().replace(/^https?:\/\//,"").replace(/^www\./,"").split("/")[0];}
+function debounce(fn,ms){let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms);};}
+function colorFor(rank){ if(rank==null)return"#9e9e9e"; if(rank<=3)return"#1a9850"; if(rank<=10)return"#fee08b"; if(rank<=20)return"#f46d43"; return"#9e9e9e"; }
 
-if (typeof L !== "undefined") {
-  map = L.map("map").setView([51.5074, -0.1278], 6);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "&copy; OpenStreetMap" }).addTo(map);
-  layer = L.layerGroup().addTo(map);
+let map=null, layer=null, chosen=null, currentTargetId=null, historyData=null;
+
+if (typeof L!=="undefined"){
+  map=L.map("map").setView([51.5,-0.12],6);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"&copy; OpenStreetMap"}).addTo(map);
+  layer=L.layerGroup().addTo(map);
 }
 
-function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
-function domainOf(u) { return (u || "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0]; }
-function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c])); }
-
-const search = debounce(async () => {
-  const q = $("q").value.trim();
-  const list = $("suggest-list");
-  if (q.length < 3) { list.style.display = "none"; return; }
-  list.innerHTML = '<div class="suggest-item"><span class="spin"></span>Searching…</div>';
-  list.style.display = "block";
-  try {
-    const r = await fetch("/api/suggest?q=" + encodeURIComponent(q));
-    const { suggestions = [], error } = await r.json();
-    if (error) { list.innerHTML = '<div class="suggest-item a">' + esc(error) + '</div>'; return; }
-    if (!suggestions.length) { list.innerHTML = '<div class="suggest-item a">No listings found</div>'; return; }
-    const wantDomain = domainOf($("website").value);
-    list.innerHTML = suggestions.map((s, i) => {
-      const isMatch = wantDomain && domainOf(s.domain) === wantDomain;
-      return '<div class="suggest-item ' + (isMatch ? "match" : "") + '" data-i="' + i + '">' +
-        '<div class="n">' + esc(s.name) + (isMatch ? ' <span class="m">✓ website match</span>' : '') + '</div>' +
-        '<div class="a">' + esc(s.address || "") + (s.rating ? ' · ★' + s.rating + ' (' + (s.reviews||0) + ')' : '') + '</div>' +
-        '</div>';
-    }).join("");
-    [...list.querySelectorAll(".suggest-item[data-i]")].forEach(el => {
-      el.onclick = () => choose(suggestions[+el.dataset.i]);
-    });
-    const auto = suggestions.find(s => wantDomain && domainOf(s.domain) === wantDomain);
-    if (auto) choose(auto);
-  } catch (e) { list.innerHTML = '<div class="suggest-item a">Search failed</div>'; }
-}, 350);
-
-$("q").addEventListener("input", search);
-$("website").addEventListener("input", search);
-
-function choose(s) {
-  chosen = s;
-  $("suggest-list").style.display = "none";
-  $("chosen").innerHTML =
-    '<div class="chosen"><div class="n">' + esc(s.name) + '</div>' +
-    '<div class="a">' + esc(s.address || "") + '</div>' +
-    '<div class="ids">' + (s.domain ? 'site: ' + esc(s.domain) + ' · ' : '') +
-    'Place ID: ' + esc(s.placeId || "—") + '</div></div>';
-  if (map && s.lat && s.lng) { map.setView([s.lat, s.lng], 13); L.marker([s.lat, s.lng]).addTo(layer); }
-  updateReady();
+// ---- nav ----
+document.querySelectorAll(".nav button").forEach(b=>b.onclick=()=>showView(b.dataset.view));
+function showView(v){
+  document.querySelectorAll(".nav button").forEach(b=>b.classList.toggle("active",b.dataset.view===v));
+  document.querySelectorAll(".view").forEach(el=>el.classList.add("hidden"));
+  $("view-"+v).classList.remove("hidden");
+  if(v==="businesses") loadBusinesses();
+  if(v==="alerts") loadAlerts();
+  if(v==="history" && currentTargetId) loadHistory(currentTargetId);
 }
 
-function updateReady() {
-  const ready = chosen && $("keyword").value.trim();
-  $("run").disabled = !ready;
-  const pts = { "5":25, "7":49, "9":81 }[$("gridSize").value] || 49;
-  $("cost").textContent = pts + " points · est. $" + (pts * 0.002).toFixed(2) + " per scan";
+// ---- typeahead + scan ----
+const search=debounce(async()=>{
+  const q=$("q").value.trim(), list=$("suggest-list");
+  if(q.length<3){list.style.display="none";return;}
+  list.innerHTML='<div class="suggest-item"><span class="spin"></span>Searching…</div>';list.style.display="block";
+  try{
+    const {suggestions=[],error}=await api.get("/api/suggest?q="+encodeURIComponent(q));
+    if(error){list.innerHTML='<div class="suggest-item a">'+esc(error)+'</div>';return;}
+    if(!suggestions.length){list.innerHTML='<div class="suggest-item a">No listings found</div>';return;}
+    const want=domainOf($("website").value);
+    list.innerHTML=suggestions.map((s,i)=>{const m=want&&domainOf(s.domain)===want;
+      return '<div class="suggest-item '+(m?"match":"")+'" data-i="'+i+'"><div class="n">'+esc(s.name)+(m?' <span class="m">✓ website match</span>':'')+'</div><div class="a">'+esc(s.address||"")+(s.rating?' · ★'+s.rating:'')+'</div></div>';}).join("");
+    [...list.querySelectorAll("[data-i]")].forEach(el=>el.onclick=()=>choose(suggestions[+el.dataset.i]));
+    const auto=suggestions.find(s=>want&&domainOf(s.domain)===want); if(auto)choose(auto);
+  }catch(e){list.innerHTML='<div class="suggest-item a">Search failed</div>';}
+},350);
+$("q").addEventListener("input",search); $("website").addEventListener("input",search);
+
+function choose(s){
+  chosen=s; $("suggest-list").style.display="none";
+  $("chosen").innerHTML='<div class="chosen"><div class="n">'+esc(s.name)+'</div><div class="a">'+esc(s.address||"")+'</div><div class="ids">'+(s.domain?'site: '+esc(s.domain)+' · ':'')+'Place ID: '+esc(s.placeId||"—")+'</div></div>';
+  if(map&&s.lat&&s.lng){map.setView([s.lat,s.lng],13);layer.clearLayers();L.marker([s.lat,s.lng]).addTo(layer);}
+  ready();
 }
-$("keyword").addEventListener("input", updateReady);
-["gridSize","spacingM","device"].forEach(id => $(id).addEventListener("change", updateReady));
-updateReady();
+function ready(){ const ok=chosen&&$("keyword").value.trim(); $("run").disabled=!ok;
+  const pts={"5":25,"7":49}[$("gridSize").value]||49; $("cost").textContent=pts+" points · est. $"+(pts*0.002).toFixed(2)+" per scan"; }
+$("keyword").addEventListener("input",ready); ["gridSize","spacingM","device"].forEach(id=>$(id).addEventListener("change",ready)); ready();
 
-function colorFor(rank) {
-  if (rank == null) return "#9e9e9e";
-  if (rank <= 3) return "#1a9850";
-  if (rank <= 10) return "#fee08b";
-  if (rank <= 20) return "#f46d43";
-  return "#9e9e9e";
-}
+$("run").onclick=async()=>{
+  if(!chosen)return; $("err").textContent="";
+  const gs=+$("gridSize").value, pts=gs*gs; $("run").disabled=true;
+  $("status").innerHTML='<span class="spin"></span>Scanning '+pts+' points (~'+Math.ceil(pts/24*6)+'s)…';
+  try{
+    const data=await api.post("/api/scan",{name:chosen.name,placeId:chosen.placeId,cid:chosen.cid,website:chosen.domain,phone:chosen.phone,lat:chosen.lat,lng:chosen.lng,keyword:$("keyword").value.trim(),gridSize:gs,spacingM:+$("spacingM").value,device:$("device").value});
+    if(data.error)throw new Error(data.error);
+    currentTargetId=data.targetId;
+    renderAbsolute(data.points); renderMetrics(data.score); $("scanResult").classList.remove("hidden");
+    $("legendAbs").innerHTML=absLegend();
+    const c=data.score.dominantCompetitor;
+    $("competitors").innerHTML=c?"<b>Top competitor:</b> "+esc(c.name)+" — wins "+c.wins+" pins":"";
+    $("status").textContent="Saved to history · cost ~$"+data.estCostUsd;
+  }catch(e){$("status").textContent="";$("err").textContent="Scan failed: "+e.message;}
+  finally{$("run").disabled=false;}
+};
+$("toHistory").onclick=()=>showView("history");
 
-$("run").addEventListener("click", async () => {
-  if (!chosen) return;
-  $("err").textContent = "";
-  const gridSize = +$("gridSize").value;
-  const pts = gridSize * gridSize;
-  $("run").disabled = true;
-  $("status").innerHTML = '<span class="spin"></span>Scanning ' + pts + ' points (~' + Math.ceil(pts / 24 * 6) + 's)…';
-  try {
-    const r = await fetch("/api/scan", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: chosen.name, placeId: chosen.placeId, cid: chosen.cid,
-        website: chosen.domain, phone: chosen.phone, lat: chosen.lat, lng: chosen.lng,
-        keyword: $("keyword").value.trim(), gridSize, spacingM: +$("spacingM").value, device: $("device").value,
-      }),
-    });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
-    renderScan(data);
-    $("status").textContent = "Done · actual cost ~$" + data.estCostUsd;
-  } catch (e) {
-    $("status").textContent = "";
-    $("err").textContent = "Scan failed: " + e.message;
-  } finally {
-    $("run").disabled = false;
-  }
-});
+function absLegend(){return '<span><i class="dot" style="background:#1a9850"></i>1–3</span><span><i class="dot" style="background:#fee08b"></i>4–10</span><span><i class="dot" style="background:#f46d43"></i>11–20</span><span><i class="dot" style="background:#9e9e9e"></i>20+/none</span>';}
 
-function renderScan(data) {
-  layer.clearLayers();
-  const b = data.business.location;
-  map.setView([b.lat, b.lng], 13);
-  data.points.forEach(p => {
-    const rank = p.observation.rank;
-    const label = rank == null ? "×" : String(rank);
-    const m = L.circleMarker([p.lat, p.lng], { radius: 15, color: "#0006", weight: 1, fillColor: colorFor(rank), fillOpacity: .85 });
-    m.bindTooltip(label, { permanent: true, direction: "center", className: "pin-label" });
-    const top = (p.top || []).map((t, i) => "<tr><td>" + (i+1) + "</td><td>" + esc(t.name) + "</td></tr>").join("");
-    m.bindPopup("<b>Rank: " + label + "</b> (" + p.observation.bucket + ")<br>matched: " + p.observation.matchMethod +
-      "<br>" + p.distanceM + " m from centre<table>" + top + "</table>");
+function renderAbsolute(points){
+  if(!layer)return; layer.clearLayers();
+  const c=centre(points); if(c)map.setView([c.lat,c.lng],13);
+  points.forEach(p=>{
+    const rank=p.observation.rank, label=rank==null?"×":String(rank);
+    const m=L.circleMarker([p.lat,p.lng],{radius:15,color:"#0006",weight:1,fillColor:colorFor(rank),fillOpacity:.85});
+    m.bindTooltip(label,{permanent:true,direction:"center",className:"pin-label"});
+    const top=(p.top||[]).map((t,i)=>"<tr><td>"+(i+1)+"</td><td>"+esc(t.name)+"</td></tr>").join("");
+    m.bindPopup("<b>Rank: "+label+"</b> ("+p.observation.bucket+")<br>matched: "+p.observation.matchMethod+"<br>"+p.distanceM+" m<table>"+top+"</table>");
     m.addTo(layer);
   });
-
-  const s = data.score;
-  const pct = x => (x * 100).toFixed(0) + "%";
-  $("results").style.display = "block";
-  $("metrics").innerHTML = [
-    ["Share of Local Voice", pct(s.shareOfLocalVoice)],
-    ["In top 3", pct(s.pctTop3)],
-    ["In top 10", pct(s.pctTop10)],
-    ["Median rank", s.medianRank == null ? "—" : s.medianRank],
-    ["Strongest", s.strongestDirection || "—"],
-    ["Weakest", s.weakestDirection || "—"],
-  ].map(([k, v]) => '<div class="metric"><div class="v">' + v + '</div><div class="k">' + k + '</div></div>').join("");
-  const c = s.dominantCompetitor;
-  $("competitors").innerHTML = c ? "<b>Top competitor:</b> " + esc(c.name) + " — wins " + c.wins + " pins, avg pos " + c.avgPosition.toFixed(1) : "";
 }
+function centre(points){const c=points.find(p=>p.row!=null&&p.distanceM===0);return c||points[Math.floor(points.length/2)];}
+function renderMetrics(s,prev){
+  const d=(cur,pr,inv)=>{ if(pr==null)return""; const diff=cur-pr; if(Math.abs(diff)<1e-9)return' <span class="d">=</span>';
+    const good=inv?diff<0:diff>0; return ' <span class="d '+(good?"up":"down")+'">'+(diff>0?"▲":"▼")+Math.abs(inv?diff:diff*100).toFixed(inv?0:0)+(inv?"":"pts")+'</span>'; };
+  $("metrics").innerHTML=[
+    ["Share of Local Voice",pct(s.shareOfLocalVoice),prev?d(s.shareOfLocalVoice,prev.shareOfLocalVoice,false):""],
+    ["In top 3",pct(s.pctTop3),""],["In top 10",pct(s.pctTop10),""],
+    ["Median rank",s.medianRank==null?"—":s.medianRank,""],
+    ["Strongest",s.strongestDirection||"—",""],["Weakest",s.weakestDirection||"—",""],
+  ].map(([k,v,dd])=>'<div class="metric"><div class="v">'+v+(dd||"")+'</div><div class="k">'+k+'</div></div>').join("");
+}
+
+// ---- businesses ----
+async function loadBusinesses(){
+  const {targets=[]}=await api.get("/api/targets");
+  $("targetList").innerHTML=targets.length?targets.map(t=>
+    '<div class="item" data-id="'+t.id+'"><div class="t">'+esc(t.name)+'</div><div class="s">"'+esc(t.keyword)+'" · '+t.device+' · '+(t.scan_count||0)+' scans'+(t.last_solv!=null?' · SoLV '+pct(t.last_solv):'')+' <button class="mini" data-del="'+t.id+'" style="float:right">✕</button></div></div>'
+  ).join(""):'<div class="note">No businesses yet — run a scan.</div>';
+  $("targetList").querySelectorAll(".item").forEach(el=>el.onclick=(e)=>{
+    if(e.target.dataset.del){delTarget(e.target.dataset.del);e.stopPropagation();return;}
+    currentTargetId=el.dataset.id; showView("history");
+  });
+}
+async function delTarget(id){ if(!confirm("Delete this business and all its history?"))return; await api.del("/api/targets?id="+id); loadBusinesses(); }
+$("importBtn").onclick=async()=>{
+  const rows=$("csv").value.trim().split("\n").map(l=>l.split(",").map(x=>x.trim())).filter(r=>r.length>=4);
+  const targets=rows.map(r=>({name:r[0],keyword:r[1],lat:+r[2],lng:+r[3],website:r[4]||undefined,placeId:r[5]||undefined,device:r[6]||"mobile"}));
+  const res=await api.post("/api/targets",{targets});
+  $("importMsg").textContent=" Imported "+res.count+(res.errors&&res.errors.length?" · "+res.errors.length+" skipped":"");
+  loadBusinesses();
+};
+
+// ---- history + compare ----
+async function loadHistory(targetId){
+  $("histEmpty").classList.add("hidden");
+  historyData=await api.get("/api/history?targetId="+targetId);
+  if(historyData.error){$("histEmpty").classList.remove("hidden");$("histEmpty").textContent=historyData.error;$("histBody").classList.add("hidden");return;}
+  const {target,scans,annotations}=historyData;
+  $("histTitle").textContent=target.name+' · "'+target.keyword+'"';
+  $("histBody").classList.remove("hidden");
+  drawTrend(scans);
+  const opts=scans.map(s=>'<option value="'+s.id+'">'+new Date(s.ran_at).toLocaleString()+' — SoLV '+pct(s.solv)+'</option>').join("");
+  $("cmpA").innerHTML=opts; $("cmpB").innerHTML=opts;
+  if(scans.length>=2){ $("cmpA").selectedIndex=1; $("cmpB").selectedIndex=0; }
+  $("scanList").innerHTML=scans.map(s=>'<div class="scanrow"><span class="when">'+new Date(s.ran_at).toLocaleString()+'</span><span class="sv">SoLV '+pct(s.solv)+' · top3 '+pct(s.pct_top3)+' · med '+(s.median_rank??"—")+'</span> <button class="mini" data-scan="'+s.id+'">Map</button></div>').join("")||'<div class="note">No scans yet.</div>';
+  $("scanList").querySelectorAll("[data-scan]").forEach(b=>b.onclick=async()=>{const d=await api.get("/api/scan-detail?id="+b.dataset.scan);renderAbsolute(d.points);renderMetrics(d.score);$("legendDiff").classList.add("hidden");});
+  renderAnnos(annotations);
+  // Load latest scan on map by default.
+  if(scans[0]){const d=await api.get("/api/scan-detail?id="+scans[0].id);renderAbsolute(d.points);renderMetrics(d.score);}
+}
+$("cmpBtn").onclick=async()=>{
+  const a=$("cmpA").value,b=$("cmpB").value; if(!a||!b||a===b){alert("Pick two different scans");return;}
+  const [A,B]=await Promise.all([api.get("/api/scan-detail?id="+a),api.get("/api/scan-detail?id="+b)]);
+  renderDiff(A,B); renderCompareMetrics(A,B); $("legendDiff").classList.remove("hidden");
+};
+function key(p){return p.row+","+p.col;}
+function renderDiff(A,B){
+  if(!layer)return; layer.clearLayers();
+  const amap={}; A.points.forEach(p=>amap[key(p)]=p);
+  const c=centre(B.points); if(c)map.setView([c.lat,c.lng],13);
+  B.points.forEach(p=>{
+    const a=amap[key(p)]; const ra=a?a.observation.rank:null, rb=p.observation.rank;
+    let color="#9e9e9e", txt="=";
+    if(ra==null&&rb!=null){color="#1a9850";txt="new";}
+    else if(ra!=null&&rb==null){color="#d33";txt="lost";}
+    else if(ra!=null&&rb!=null){const dd=ra-rb; if(dd>0){color="#1a9850";txt="+"+dd;} else if(dd<0){color="#d33";txt=String(dd);} else {color="#9e9e9e";txt="=";}}
+    const m=L.circleMarker([p.lat,p.lng],{radius:15,color:"#0006",weight:1,fillColor:color,fillOpacity:.85});
+    m.bindTooltip(txt,{permanent:true,direction:"center",className:"pin-label"});
+    m.bindPopup("<b>"+(ra==null?"×":ra)+" → "+(rb==null?"×":rb)+"</b><br>"+p.distanceM+" m from centre");
+    m.addTo(layer);
+  });
+}
+function renderCompareMetrics(A,B){
+  const dd=(cur,pr,inv)=>{const diff=cur-pr; if(Math.abs(diff)<1e-9)return'<span class="d">=</span>'; const good=inv?diff<0:diff>0; return '<span class="d '+(good?"up":"down")+'">'+(diff>0?"▲":"▼")+Math.abs(inv?diff:diff*100).toFixed(0)+(inv?"":"pts")+'</span>';};
+  const sA=A.score,sB=B.score;
+  $("cmpMetrics").innerHTML='<div class="metrics">'+[
+    ["Share of Local Voice",pct(sB.shareOfLocalVoice),dd(sB.shareOfLocalVoice,sA.shareOfLocalVoice,false)],
+    ["In top 3",pct(sB.pctTop3),dd(sB.pctTop3,sA.pctTop3,false)],
+    ["In top 10",pct(sB.pctTop10),dd(sB.pctTop10,sA.pctTop10,false)],
+    ["Median rank",sB.medianRank==null?"—":sB.medianRank,sA.medianRank!=null&&sB.medianRank!=null?dd(sB.medianRank,sA.medianRank,true):""],
+  ].map(([k,v,d])=>'<div class="metric"><div class="v">'+v+' '+d+'</div><div class="k">'+k+'</div></div>').join("")+'</div>';
+}
+function drawTrend(scans){
+  const svg=$("trend"); const data=[...scans].reverse(); // oldest -> newest
+  if(data.length<2){svg.innerHTML='';$("trendLabel").textContent=data.length?"One scan so far — run another later to see the trend.":"";return;}
+  const W=360,H=60,pad=4; const xs=(i)=>pad+i*(W-2*pad)/(data.length-1); const ys=(v)=>H-pad-v*(H-2*pad);
+  const pts=data.map((s,i)=>xs(i)+","+ys(s.solv)).join(" ");
+  const dots=data.map((s,i)=>'<circle cx="'+xs(i)+'" cy="'+ys(s.solv)+'" r="2.5" fill="#1a73e8"><title>'+new Date(s.ran_at).toLocaleDateString()+': '+pct(s.solv)+'</title></circle>').join("");
+  svg.setAttribute("viewBox","0 0 "+W+" "+H);
+  svg.innerHTML='<polyline points="'+pts+'" fill="none" stroke="#1a73e8" stroke-width="2"/>'+dots;
+  $("trendLabel").textContent=data.length+" scans · "+new Date(data[0].ran_at).toLocaleDateString()+" → "+new Date(data[data.length-1].ran_at).toLocaleDateString();
+}
+function renderAnnos(annotations){
+  $("annoList").innerHTML=(annotations||[]).map(a=>'<div class="anno"><span class="dt">'+esc(a.at)+'</span><span>'+esc(a.text)+'</span><button class="mini" data-anno="'+a.id+'" style="margin-left:auto">✕</button></div>').join("")||'<div class="note">No notes yet.</div>';
+  $("annoList").querySelectorAll("[data-anno]").forEach(b=>b.onclick=async()=>{await api.del("/api/annotations?id="+b.dataset.anno);loadHistory(currentTargetId);});
+}
+$("annoAdd").onclick=async()=>{
+  const text=$("annoText").value.trim(); if(!text||!currentTargetId)return;
+  await api.post("/api/annotations",{targetId:currentTargetId,at:$("annoDate").value||undefined,text});
+  $("annoText").value=""; loadHistory(currentTargetId);
+};
+
+// ---- alerts ----
+async function loadAlerts(){
+  const {alerts=[]}=await api.get("/api/alerts");
+  const open=alerts.filter(a=>!a.acknowledged).length;
+  const badge=$("alertBadge"); badge.textContent=open; badge.classList.toggle("hidden",open===0);
+  $("alertList").innerHTML=alerts.length?alerts.map(a=>'<div class="alert"><b>'+esc(a.name)+'</b> — '+esc(a.message)+'<br><span class="note">'+new Date(a.created_at).toLocaleString()+(a.acknowledged?' · acknowledged':' · <a href="#" data-ack="'+a.id+'">acknowledge</a>')+'</span></div>').join(""):'<div class="note">No alerts.</div>';
+  $("alertList").querySelectorAll("[data-ack]").forEach(el=>el.onclick=async(e)=>{e.preventDefault();await api.post("/api/alerts",{id:el.dataset.ack});loadAlerts();});
+}
+loadAlerts();
 </script>
 </body>
 </html>

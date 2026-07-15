@@ -1,0 +1,18 @@
+# Standalone weekly-scan Worker (cron). Deploy from this directory:
+#   CLOUDFLARE_ACCOUNT_ID=44799b719f2192a9f066f425aaff3106 npx wrangler deploy
+# Set its own secrets (separate from the Pages project):
+#   npx wrangler secret put DATAFORSEO_LOGIN
+#   npx wrangler secret put DATAFORSEO_PASSWORD
+#   npx wrangler secret put RESEND_API_KEY   # optional, for alert emails
+#   npx wrangler secret put ALERT_EMAIL_TO   # optional
+name = "map-tracker-cron"
+main = "scheduled.ts"
+compatibility_date = "2026-07-14"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "map-tracker-db"
+database_id = "009d9049-832a-47f4-a7b2-138d1af0aaab"
+
+[triggers]
+crons = ["0 6 * * 1"]  # every Monday 06:00 UTC

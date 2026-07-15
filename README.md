@@ -10,7 +10,33 @@ grid is just the display layer — the hard, valuable part is producing a clean,
 repeatable local search from every coordinate and matching your business
 reliably in the results. This repo builds that hard part.
 
-**Live demo:** https://map-tracker.pages.dev/ *(mock data — see below)*
+**Live app:** https://map-tracker.pages.dev/ — real Google Maps data via DataForSEO.
+
+Type a business name → pick the right listing from the typeahead (auto-matched on
+website) → enter a keyword → get a live grid heatmap. Scans are saved to a
+Cloudflare D1 database so you can compare over time, and a weekly cron Worker
+re-scans automatically and raises alerts on drops.
+
+## The app (v2)
+
+- **Find listing** — typeahead over the Google business-listings database
+  (`/api/suggest`), auto-selected by website domain.
+- **Live scan** — one business + one keyword grid scan (`/api/scan`), saved to history.
+- **Businesses** — dashboard of every tracked business; bulk CSV import.
+- **History & Compare** — pick any two scans (or "vs last") → **change heatmap**
+  (green improved / red worse per pin), metric deltas, and a Share-of-Local-Voice
+  **trend chart** over time.
+- **Annotations** — pin notes ("added photos", "changed category") to dates so you
+  can correlate actions with ranking movement.
+- **Alerts** — the weekly Worker flags a ≥10-pt SoLV drop or falling out of the
+  local 3-pack (optional email via Resend).
+
+Backend: Cloudflare Pages + Pages Functions + **D1** (SQLite) + a scheduled Worker.
+Credentials live as Cloudflare secrets, never in the client or repo.
+
+---
+
+### Offline engine (also included)
 
 ---
 

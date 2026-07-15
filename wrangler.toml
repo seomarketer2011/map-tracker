@@ -8,3 +8,9 @@
 name = "map-tracker"
 pages_build_output_dir = "web"
 compatibility_date = "2026-07-14"
+
+# Scan history for comparisons over time.
+[[d1_databases]]
+binding = "DB"
+database_name = "map-tracker-db"
+database_id = "009d9049-832a-47f4-a7b2-138d1af0aaab"
