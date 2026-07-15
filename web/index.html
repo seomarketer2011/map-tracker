@@ -21,6 +21,8 @@
   button.primary { background:var(--accent); color:#fff; border:none; font-weight:600; cursor:pointer; margin-top:12px; }
   button.primary:disabled { opacity:.5; cursor:not-allowed; }
   button.mini { width:auto; padding:4px 10px; font-size:12px; cursor:pointer; }
+  button.mini.danger { border-color:#d3333366; color:#d33; }
+  button.mini.danger:hover { background:#d3331a; }
   .nav { display:flex; border-bottom:1px solid var(--line); position:sticky; top:0; background:Canvas; z-index:500; }
   .nav button { border:none; border-radius:0; background:transparent; padding:12px 6px; font-size:13px; color:var(--muted); border-bottom:2px solid transparent; cursor:pointer; }
   .nav button.active { color:inherit; border-bottom-color:var(--accent); font-weight:600; }
@@ -146,6 +148,7 @@
       <h1 id="histTitle">History</h1>
       <div id="histEmpty" class="note">Select a business, or run a scan first.</div>
       <div id="histBody" class="hidden">
+        <button class="mini danger" id="delFromHistory" style="margin-bottom:6px">🗑 Delete this keyword &amp; history</button>
         <h2>Share of Local Voice over time</h2>
         <svg class="trend" id="trend"></svg>
         <div class="note" id="trendLabel"></div>
@@ -201,7 +204,7 @@ let map=null, layer=null, chosen=null, currentTargetId=null, historyData=null;
 // Only one context may own the map at a time. A background scan draws only while
 // it still owns the map, so navigating away can't get its pins painted onto
 // another view. scanView holds the current/last Scan-tab render for redraw.
-let mapOwner=0, scanView=null, scanRunning=false;
+let mapOwner=0, scanView=null, currentView="scan";
 const takeMap=()=>++mapOwner;
 
 if (typeof L!=="undefined"){
@@ -213,6 +216,7 @@ if (typeof L!=="undefined"){
 // ---- nav ----
 document.querySelectorAll(".nav button").forEach(b=>b.onclick=()=>showView(b.dataset.view));
 function showView(v){
+  currentView=v;
   document.querySelectorAll(".nav button").forEach(b=>b.classList.toggle("active",b.dataset.view===v));
   document.querySelectorAll(".view").forEach(el=>el.classList.add("hidden"));
   $("view-"+v).classList.remove("hidden");
@@ -266,50 +270,51 @@ function ready(){ const kws=$("keyword").value.split(/[\n,]/).map(s=>s.trim()).f
   $("cost").textContent=pts+" points"+(n>1?" × "+n+" keywords":"")+" · est. $"+(pts*n*0.004).toFixed(2)+" (Google local pack)"; }
 $("keyword").addEventListener("input",ready); ["gridSize","spacingM","device"].forEach(id=>$(id).addEventListener("change",ready)); ready();
 
-const BATCH=40;
-// Scan one keyword: fire all batches in PARALLEL for speed, render pins as they arrive.
-async function scanOneKeyword(keyword, points, gs, spacingM, device, biz, total, onProgress){
-  scanView={owner:takeMap(), center:[biz.lat,biz.lng], zoom:(map?map.getZoom():12), pins:[]};
-  if(layer)layer.clearLayers(); if(map)map.setView(scanView.center,map.getZoom());
-  const collected=[]; let done=0;
-  const batches=[]; for(let i=0;i<points.length;i+=BATCH) batches.push(points.slice(i,i+BATCH));
-  await Promise.all(batches.map(async slice=>{
-    const res=await api.post("/api/scan-batch",{...biz,keyword,device,points:slice});
-    if(res.error) throw new Error(res.error);
-    res.points.forEach(p=>{collected.push(p);scanView.pins.push(p);if(mapOwner===scanView.owner)drawPin(p);});
-    done+=slice.length; onProgress(done);
-  }));
-  const saved=await api.post("/api/scan-save",{...biz,keyword,device,gridSize:gs,spacingM,points:collected});
-  if(saved.error) throw new Error(saved.error);
-  return saved;
-}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+// Async scan: submit to the server-side queue, then poll. Server collects and
+// saves, so you can refresh or close the tab and results still land.
 $("run").onclick=async()=>{
   if(!chosen)return; $("err").textContent="";
   const keywords=$("keyword").value.split(/[\n,]/).map(s=>s.trim()).filter(Boolean);
   if(!keywords.length){$("err").textContent="Enter at least one keyword";return;}
   const gs=+$("gridSize").value, spacingM=+$("spacingM").value, device=$("device").value;
   const biz={name:chosen.name,placeId:chosen.placeId,cid:chosen.cid,website:chosen.domain,phone:chosen.phone,lat:chosen.lat,lng:chosen.lng};
-  $("run").disabled=true; scanRunning=true; $("scanResult").classList.add("hidden");
+  $("run").disabled=true; $("scanResult").classList.add("hidden");
+  scanView={owner:takeMap(),center:[chosen.lat,chosen.lng],zoom:(map?map.getZoom():12),pins:[]};
+  if(layer)layer.clearLayers(); if(map)map.setView(scanView.center,map.getZoom());
   try{
-    $("status").innerHTML='<span class="spin"></span>Planning grid…';
-    const plan=await api.post("/api/scan-plan",{lat:chosen.lat,lng:chosen.lng,gridSize:gs,spacingM});
-    if(plan.error)throw new Error(plan.error);
-    const total=plan.points.length; let lastSaved=null;
-    for(let k=0;k<keywords.length;k++){
-      const kw=keywords[k];
-      lastSaved=await scanOneKeyword(kw,plan.points,gs,spacingM,device,biz,total,(done)=>{
-        $("status").innerHTML='<span class="spin"></span>'+(keywords.length>1?'Keyword '+(k+1)+'/'+keywords.length+' ("'+esc(kw)+'") — ':'')+'scanning '+done+'/'+total+'…';
-      });
-    }
-    currentTargetId=lastSaved.targetId;
-    renderMetrics(lastSaved.score); $("scanResult").classList.remove("hidden"); $("legendAbs").innerHTML=absLegend();
-    const c=lastSaved.score.dominantCompetitor;
-    $("competitors").innerHTML=c?"<b>Top competitor:</b> "+esc(c.name)+" — wins "+c.wins+" pins":"";
-    $("status").textContent="Saved "+keywords.length+" keyword"+(keywords.length>1?"s":"")+" to history · "+total+" points each";
+    $("status").innerHTML='<span class="spin"></span>Queuing scan…';
+    const res=await api.post("/api/scan-async",{...biz,keywords,gridSize:gs,spacingM,device});
+    if(res.error)throw new Error(res.error);
+    pollJobs(res.jobs); // runs in background; safe to leave the page
+    $("status").innerHTML='<span class="spin"></span>Scan queued — running on the server. You can leave this page.';
   }catch(e){$("status").textContent="";$("err").textContent="Scan failed: "+e.message;}
-  finally{$("run").disabled=false; scanRunning=false;}
+  finally{$("run").disabled=false;}
 };
-window.addEventListener("beforeunload",(e)=>{ if(scanRunning){ e.preventDefault(); e.returnValue=""; } });
+async function pollJobs(jobs){
+  const ids=jobs.map(j=>j.jobId), total=jobs.reduce((a,j)=>a+j.totalPoints,0), rendered={};
+  for(;;){
+    let st; try{ ({jobs:st}=await api.get("/api/jobs?ids="+ids.join(","))); }catch(e){ await sleep(2500); continue; }
+    const done=st.reduce((a,j)=>a+(j.done||0),0);
+    for(const j of st){ if(j.status==='complete'&&j.scanId&&!rendered[j.id]){ rendered[j.id]=true; await showScanById(j.scanId); } }
+    const failed=st.filter(j=>j.status==='failed');
+    const all=st.every(j=>['complete','failed','unknown'].includes(j.status));
+    $("status").innerHTML=all
+      ? ('Saved '+(jobs.length-failed.length)+'/'+jobs.length+' keyword'+(jobs.length>1?'s':'')+' to history'+(failed.length?' · '+failed.length+' failed':''))
+      : ('<span class="spin"></span>Scanning '+done+'/'+total+' points on the server…');
+    if(all)break;
+    await sleep(1500);
+  }
+}
+async function showScanById(scanId){
+  const d=await api.get("/api/scan-detail?id="+scanId); if(d.error)return;
+  currentTargetId=d.targetId;
+  renderMetrics(d.score); $("scanResult").classList.remove("hidden"); $("legendAbs").innerHTML=absLegend();
+  const c=d.score.dominantCompetitor; $("competitors").innerHTML=c?"<b>Top competitor:</b> "+esc(c.name)+" — wins "+c.wins+" pins":"";
+  const ctr=centre(d.points);
+  scanView={owner:mapOwner,center:ctr?[ctr.lat,ctr.lng]:null,zoom:13,pins:d.points};
+  if(currentView==='scan'){ scanView.owner=takeMap(); if(layer)layer.clearLayers(); if(map&&scanView.center)map.setView(scanView.center,13); d.points.forEach(drawPin); }
+}
 function drawPin(p){
   if(!layer)return;
   const rank=p.observation.rank, label=rank==null?"×":String(rank);
@@ -352,11 +357,12 @@ async function loadBusinesses(){
   const {businesses=[]}=await api.get("/api/targets");
   $("targetList").innerHTML=businesses.length?businesses.map(bz=>
     '<div class="biz"><div class="t">'+esc(bz.name)+
-      ' <button class="mini" data-add=\''+esc(JSON.stringify(bz))+'\'>+ keyword</button></div>'+
+      ' <span style="float:right"><button class="mini" data-add=\''+esc(JSON.stringify(bz))+'\'>+ keyword</button> '+
+      '<button class="mini danger" data-delbiz="'+esc(bz.businessKey)+'" title="Delete this business and all its keywords">🗑 delete</button></span></div>'+
       (bz.website?'<div class="s">'+esc(bz.website)+'</div>':'')+
       bz.keywords.map(k=>'<div class="kw" data-id="'+k.id+'"><span class="kwn">"'+esc(k.keyword)+'"</span>'+
         '<span class="kws2">'+k.device+' · '+(k.scanCount||0)+' scans'+(k.lastSolv!=null?' · SoLV '+pct(k.lastSolv):'')+'</span>'+
-        '<button class="mini" data-del="'+k.id+'">✕</button></div>').join('')+
+        '<button class="mini danger" data-del="'+k.id+'" title="Delete this keyword">🗑</button></div>').join('')+
     '</div>'
   ).join(""):'<div class="note">No businesses yet — run a scan.</div>';
   $("targetList").querySelectorAll(".kw").forEach(el=>el.onclick=(e)=>{
@@ -369,6 +375,11 @@ async function loadBusinesses(){
     clearChosen();
     choose({name:bz.name,placeId:bz.placeId,cid:bz.cid,domain:bz.website,address:bz.website||"",lat:bz.lat,lng:bz.lng});
     showView("scan"); $("keyword").focus();
+  });
+  $("targetList").querySelectorAll("[data-delbiz]").forEach(b=>b.onclick=async(e)=>{
+    e.stopPropagation();
+    if(!confirm("Delete this WHOLE business and every keyword + scan under it?"))return;
+    await api.del("/api/targets?businessKey="+encodeURIComponent(b.dataset.delbiz)); loadBusinesses();
   });
 }
 async function delTarget(id){ if(!confirm("Delete this keyword and its scan history?"))return; await api.del("/api/targets?id="+id); loadBusinesses(); }
@@ -388,6 +399,10 @@ async function loadHistory(targetId){
   const {target,scans,annotations}=historyData;
   $("histTitle").textContent=target.name+' · "'+target.keyword+'"';
   $("histBody").classList.remove("hidden");
+  $("delFromHistory").onclick=async()=>{
+    if(!confirm('Delete keyword "'+target.keyword+'" for '+target.name+' and its history?'))return;
+    await api.del("/api/targets?id="+targetId); showView("businesses");
+  };
   drawTrend(scans);
   const opts=scans.map(s=>'<option value="'+s.id+'">'+new Date(s.ran_at).toLocaleString()+' — SoLV '+pct(s.solv)+'</option>').join("");
   $("cmpA").innerHTML=opts; $("cmpB").innerHTML=opts;

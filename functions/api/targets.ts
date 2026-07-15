@@ -62,11 +62,27 @@ export const onRequestPost: PagesFunction<DBEnv> = async ({ request, env }) => {
 };
 
 export const onRequestDelete: PagesFunction<DBEnv> = async ({ request, env }) => {
-  const id = new URL(request.url).searchParams.get("id");
-  if (!id) return json({ error: "id required" }, 400);
+  const url = new URL(request.url);
+  const id = url.searchParams.get("id");
+  const businessKey = url.searchParams.get("businessKey");
+
+  // Delete a whole business (all its keyword targets) at once.
+  if (businessKey) {
+    const { results } = await env.DB.prepare("SELECT id FROM targets WHERE business_key=?").bind(businessKey).all<{ id: string }>();
+    const ids = (results ?? []).map((r) => r.id);
+    for (const tid of ids) await deleteTarget(env, tid);
+    return json({ deleted: ids, count: ids.length });
+  }
+
+  if (!id) return json({ error: "id or businessKey required" }, 400);
+  await deleteTarget(env, id);
+  return json({ deleted: id });
+};
+
+async function deleteTarget(env: DBEnv, id: string): Promise<void> {
   await env.DB.prepare("DELETE FROM scans WHERE target_id=?").bind(id).run();
   await env.DB.prepare("DELETE FROM annotations WHERE target_id=?").bind(id).run();
   await env.DB.prepare("DELETE FROM alert_events WHERE target_id=?").bind(id).run();
+  await env.DB.prepare("DELETE FROM scan_jobs WHERE place_id=(SELECT place_id FROM targets WHERE id=?)").bind(id).run().catch(() => {});
   await env.DB.prepare("DELETE FROM targets WHERE id=?").bind(id).run();
-  return json({ deleted: id });
-};
+}

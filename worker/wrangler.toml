@@ -16,3 +16,12 @@ database_id = "009d9049-832a-47f4-a7b2-138d1af0aaab"
 
 [triggers]
 crons = ["0 6 * * 1"]  # every Monday 06:00 UTC
+
+# Consume async scan-job batches enqueued by the Pages API.
+[[queues.consumers]]
+queue = "map-scan-jobs"
+max_batch_size = 10
+max_batch_timeout = 1   # deliver quickly instead of waiting to fill a batch
+max_concurrency = 8
+max_retries = 3
+retry_delay = 10

@@ -14,3 +14,8 @@ compatibility_date = "2026-07-14"
 binding = "DB"
 database_name = "map-tracker-db"
 database_id = "009d9049-832a-47f4-a7b2-138d1af0aaab"
+
+# Async scan jobs — producer side (the API enqueues; the Worker consumes).
+[[queues.producers]]
+binding = "SCAN_QUEUE"
+queue = "map-scan-jobs"
