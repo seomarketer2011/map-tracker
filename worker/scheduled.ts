@@ -12,7 +12,7 @@
  * Deploy separately: `wrangler deploy` from ./worker (see worker/wrangler.toml).
  */
 
-import { runGridScan, persistScan, collectPoints, buildScanOutput, toTarget } from "../functions/_scan";
+import { runGridScan, persistScan, collectPoints, buildScanOutput, toTarget, retryAnomalies } from "../functions/_scan";
 import { randomId, type DBEnv } from "../functions/_db";
 import { getJob, writeJobPoints, countJobPoints, readJobPoints, claimFinalize, completeJob, failJob } from "../functions/_jobs";
 
@@ -119,16 +119,20 @@ async function processBatch(env: Env, msg: ScanMessage): Promise<void> {
     return { idx: msg.points[k]!.idx, data: rest };
   }));
 
-  // If all points are in, one caller finalizes: score + persist the scan.
+  // If all points are in, one caller finalizes: anomaly re-check, score, persist.
   const done = await countJobPoints(env, job.id);
   if (done >= job.total_points && await claimFinalize(env, job.id)) {
-    const points = await readJobPoints(env, job.id);
+    const raw = await readJobPoints(env, job.id);
+    const params = { keyword: job.keyword, device: job.device, languageCode: job.language_code, depth: 20, target };
+    const { points } = await retryAnomalies(
+      { login: env.DATAFORSEO_LOGIN, password: env.DATAFORSEO_PASSWORD }, params, raw as any,
+    );
     const input = {
       name: job.name, placeId: job.place_id, cid: job.cid, website: job.website, phone: job.phone,
       lat: job.lat, lng: job.lng, keyword: job.keyword, device: job.device, gridSize: job.grid_size,
       spacingM: job.spacing_m, languageCode: job.language_code,
     };
-    const out = buildScanOutput(input, points as any);
+    const out = buildScanOutput(input, points);
     const scanId = await persistScan(env, out, input);
     await completeJob(env, job.id, scanId ?? "unsaved");
   }

@@ -351,8 +351,9 @@ function drawPin(p){
   const rank=p.observation.rank, label=rank==null?"×":String(rank);
   const m=L.circleMarker([p.lat,p.lng],{radius:14,color:"#0006",weight:1,fillColor:colorFor(rank),fillOpacity:.85});
   m.bindTooltip(label,{permanent:true,direction:"center",className:"pin-label"});
-  const top=(p.top||[]).map((t,i)=>"<tr><td>"+(i+1)+"</td><td>"+esc(t.name)+"</td></tr>").join("");
-  m.bindPopup("<b>Rank: "+label+"</b> ("+p.observation.bucket+")<br>matched: "+p.observation.matchMethod+"<br>"+p.distanceM+" m<table>"+top+"</table>");
+  const top=(p.top||[]).slice(0,5).map((t,i)=>"<tr><td>"+(i+1)+"</td><td>"+esc(t.name)+"</td></tr>").join("");
+  const qa=p.retried?("<br>re-checked · confidence: "+(p.confidence||"medium")):"";
+  m.bindPopup("<b>Rank: "+label+"</b> ("+p.observation.bucket+")<br>matched: "+p.observation.matchMethod+qa+"<br>"+p.distanceM+" m<table>"+top+"</table>");
   m.addTo(layer);
 }
 $("toHistory").onclick=()=>showView("history");

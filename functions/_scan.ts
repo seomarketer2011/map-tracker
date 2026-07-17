@@ -9,7 +9,7 @@
  */
 
 import {
-  generateSquareGrid, observeRank, parseMapsItems, scoreScan, b64,
+  generateSquareGrid, observeRank, parseMapsItems, scoreScan, b64, visibilityWeight,
   type ScoredPoint, type SerpBusiness, type Observation,
 } from "./_core";
 import { targetId, randomId, upsertTarget, insertScan, type DBEnv } from "./_db";
@@ -29,6 +29,8 @@ export interface ScannedPoint extends GridPointLite {
   error: boolean;
   top: { position: number; name: string; placeId?: string; cid?: string }[];
   results: SerpBusiness[]; // full list, used for scoring (not returned to client)
+  retried?: boolean;
+  confidence?: "high" | "medium" | "low";
 }
 
 export interface ScanOutput {
@@ -52,19 +54,31 @@ export async function collectPoints(
   concurrency = 24,
 ): Promise<ScannedPoint[]> {
   const auth = `Basic ${b64(`${creds.login}:${creds.password}`)}`;
+  const fetchPoint = async (p: GridPointLite) => {
+    const res = await fetch(ENDPOINT, {
+      method: "POST",
+      headers: { Authorization: auth, "Content-Type": "application/json" },
+      body: JSON.stringify([{ keyword: params.keyword, location_coordinate: `${p.lat},${p.lng},15z`, language_code: params.languageCode, device: params.device, depth: params.depth }]),
+    });
+    if (!res.ok) throw new Error(`upstream ${res.status}`);
+    return parseMapsItems(await res.json(), params.depth);
+  };
   const one = async (p: GridPointLite): Promise<ScannedPoint> => {
-    try {
-      const res = await fetch(ENDPOINT, {
-        method: "POST",
-        headers: { Authorization: auth, "Content-Type": "application/json" },
-        body: JSON.stringify([{ keyword: params.keyword, location_coordinate: `${p.lat},${p.lng},15z`, language_code: params.languageCode, device: params.device, depth: params.depth }]),
-      });
-      if (!res.ok) throw new Error(`upstream ${res.status}`);
-      const results = parseMapsItems(await res.json(), params.depth);
-      return { ...p, observation: observeRank(params.target, results), error: false, top: results.slice(0, 5).map((r) => ({ position: r.position, name: r.name, placeId: r.placeId, cid: r.cid })), results };
-    } catch {
-      return { ...p, observation: observeRank(params.target, []), error: true, top: [], results: [] };
+    // Up to 3 attempts per pin — a transient failure must not become a data hole.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const results = await fetchPoint(p);
+        return {
+          ...p, observation: observeRank(params.target, results), error: false,
+          // Keep top 10 so competitor standings are computed from real depth.
+          top: results.slice(0, 10).map((r) => ({ position: r.position, name: r.name, placeId: r.placeId, cid: r.cid })),
+          results,
+        };
+      } catch {
+        if (attempt < 2) await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+      }
     }
+    return { ...p, observation: observeRank(params.target, []), error: true, top: [], results: [] };
   };
   const out: ScannedPoint[] = new Array(points.length);
   let cursor = 0;
@@ -83,6 +97,53 @@ export function toTarget(input: ScanInput): Target {
   return { name: String(input.name).trim(), placeId: input.placeId ?? undefined, cid: input.cid ?? undefined, website: input.website ?? undefined, phone: input.phone ?? undefined };
 }
 
+/**
+ * Quality pass: re-collect suspicious pins once before scoring.
+ *
+ * A pin is suspicious if it errored, or its visibility is far below the median
+ * of its adjacent grid neighbours (the classic isolated "×" in a sea of green —
+ * usually a collection glitch, not a real dead zone). The retry only replaces
+ * the original when it agrees better with the neighbourhood; genuine dead
+ * zones survive because their retry comes back just as bad. Bounded to ~15% of
+ * the grid so a truly volatile keyword can't double the scan cost.
+ */
+export async function retryAnomalies(
+  creds: { login: string; password: string },
+  params: { keyword: string; device: string; languageCode: string; depth: number; target: Target },
+  points: ScannedPoint[],
+): Promise<{ points: ScannedPoint[]; retriedCount: number }> {
+  const vis = (p: ScannedPoint) => visibilityWeight(p.observation.rank);
+  const neighbourMedian = (p: ScannedPoint): number | null => {
+    const vals = points
+      .filter((q) => q !== p && Math.abs(q.row - p.row) <= 1 && Math.abs(q.col - p.col) <= 1 && !q.error)
+      .map(vis).sort((a, b) => a - b);
+    if (!vals.length) return null;
+    const m = Math.floor(vals.length / 2);
+    return vals.length % 2 ? vals[m]! : (vals[m - 1]! + vals[m]!) / 2;
+  };
+
+  const suspects = points
+    .map((p, i) => ({ p, i, nm: neighbourMedian(p) }))
+    .filter(({ p, nm }) => p.error || (nm !== null && nm - vis(p) >= 0.5));
+  const cap = Math.max(3, Math.ceil(points.length * 0.15));
+  const toRetry = suspects.slice(0, cap);
+  if (!toRetry.length) return { points, retriedCount: 0 };
+
+  const redone = await collectPoints(creds, params, toRetry.map(({ p }) => p), toRetry.length);
+  const out = [...points];
+  redone.forEach((fresh, k) => {
+    const { p, i } = toRetry[k]!;
+    if (p.error && !fresh.error) {
+      out[i] = { ...fresh, retried: true, confidence: "medium" } as ScannedPoint;
+    } else if (!fresh.error && visibilityWeight(fresh.observation.rank) > vis(p)) {
+      out[i] = { ...fresh, retried: true, confidence: "medium" } as ScannedPoint; // first pass looked like a glitch
+    } else {
+      out[i] = { ...p, retried: true, confidence: "low" } as ScannedPoint; // retry agreed — original stands, flagged
+    }
+  });
+  return { points: out, retriedCount: toRetry.length };
+}
+
 /** Assemble a full ScanOutput from already-collected points (batched client flow). */
 export function buildScanOutput(input: ScanInput, scanned: ScannedPoint[]): ScanOutput {
   const scored: ScoredPoint[] = scanned.map((s) => ({
@@ -92,7 +153,7 @@ export function buildScanOutput(input: ScanInput, scanned: ScannedPoint[]): Scan
   const score = scoreScan(scored, { placeId: input.placeId, cid: input.cid, website: input.website, name: input.name });
   const gridSize = clampOdd(Number(input.gridSize) || 7, 3, 15);
   const spacingM = Math.min(Math.max(Number(input.spacingM) || 500, 50), 3000);
-  const points = scanned.map((s) => ({ lat: s.lat, lng: s.lng, row: s.row, col: s.col, distanceM: s.distanceM, bearingDeg: s.bearingDeg, observation: s.observation, error: s.error, top: s.top }));
+  const points = scanned.map((s) => ({ lat: s.lat, lng: s.lng, row: s.row, col: s.col, distanceM: s.distanceM, bearingDeg: s.bearingDeg, observation: s.observation, error: s.error, top: s.top, retried: s.retried ?? false, confidence: s.confidence ?? "high" }));
   return {
     business: { name: String(input.name).trim(), placeId: input.placeId ?? null, website: input.website ?? null, location: { lat: input.lat, lng: input.lng } },
     keyword: String(input.keyword).trim(), device: input.device === "desktop" ? "desktop" : "mobile", gridSize, spacingM,
@@ -103,11 +164,13 @@ export function buildScanOutput(input: ScanInput, scanned: ScannedPoint[]): Scan
 /** Single-shot full-grid scan (used by the cron Worker and legacy /api/scan). */
 export async function runGridScan(creds: { login: string; password: string }, input: ScanInput, concurrency = 24): Promise<ScanOutput> {
   const grid = buildGrid(input);
-  const scanned = await collectPoints(creds, {
+  const params = {
     keyword: String(input.keyword).trim(), device: input.device === "desktop" ? "desktop" : "mobile",
     languageCode: String(input.languageCode ?? "en"), depth: Math.min(Math.max(Number(input.depth) || 20, 10), 100), target: toTarget(input),
-  }, grid, concurrency);
-  return buildScanOutput(input, scanned);
+  };
+  const scanned = await collectPoints(creds, params, grid, concurrency);
+  const { points } = await retryAnomalies(creds, params, scanned);
+  return buildScanOutput(input, points);
 }
 
 export async function persistScan(env: DBEnv, out: ScanOutput, input: ScanInput): Promise<string | null> {
