@@ -1,34 +1,39 @@
-# What we need, what it costs, and what to build next
+# Where we are, what it costs, and what to build next
 
-This is the honest "you are here" for turning the working foundation into a real
-product.
+This is the honest "you are here" for the product. The live app
+(https://map-tracker.pages.dev/) already runs real scans end-to-end.
 
-## 1. What we need from you (inputs)
+## 1. Already done (was the original roadmap)
 
-To move from mock data to real rankings, in rough priority order:
+1. ✅ **DataForSEO wired live** — the `local_finder` adapter powers real scans
+   (`src/collect/dataForSeoProvider.ts`, `functions/_scan.ts`).
+2. ✅ **Persistence** — Cloudflare **D1** database, migrations in `migrations/`.
+3. ✅ **Job queue** — async scans via a Cloudflare Queue (`map-scan-jobs`):
+   the API enqueues, the Worker consumes with retries; parallel batch scanning
+   across keywords.
+4. ✅ **Scheduling** — weekly cron Worker (Mondays 06:00 UTC) re-scans and
+   raises alerts.
+5. ✅ **Multi-business dashboard** — businesses with grouped keywords, bulk CSV
+   import, deletion with confirmation.
+6. ✅ **History & alerts** — scan history, compare/change heatmaps, SoLV trend
+   charts, annotations, ≥10-pt SoLV-drop / 3-pack-exit alerts (optional email
+   via Resend).
+7. ✅ **Accuracy hardening** — per-pin retry, anomaly re-checks, deeper
+   competitor data per pin.
+
+## 2. What we still need from you
 
 | # | Input | Why | Blocker? |
 |---|-------|-----|----------|
-| 1 | **DataForSEO account** (login + password) | The live Maps SERP source. Everything downstream already exists. | Yes — no real ranks without it |
-| 2 | **Real GBP identity per business**: Place ID (ideally CID too), plus website, phone, exact lat/lng | Reliable matching. Place ID is the single most important field. | Yes |
-| 3 | **Keyword lists** per business | Defines what we scan. Start with 5–10 real money keywords. | Yes |
-| 4 | **Grid preferences**: radius + density (default 13×13 @ 500 m) | Controls cost vs coverage. See §2. | No (sensible default) |
-| 5 | **Scoped Cloudflare API token** (replaces the global key) | Safety — see `docs/DEPLOY.md`. | No, but strongly recommended |
-| 6 | **Budget ceiling** for SERP calls | Grid × keywords × devices multiplies fast (§2). | No |
+| 1 | **Keyword lists** per business you want tracked | Defines what we scan. Start with 5–10 real money keywords each. | Only for new businesses |
+| 2 | **Grid preferences**: radius + density (default 13×13 @ 500 m) | Controls cost vs coverage. See §3. | No (sensible default) |
+| 3 | **Scoped Cloudflare API token** (replaces the global key) | Safety — see `docs/DEPLOY.md`. | No, but strongly recommended |
+| 4 | **Budget ceiling** for SERP calls | Grid × keywords × devices multiplies fast (§3). | No |
 
-Optional but valuable later: competitor Place IDs (to chart who replaces you
-where), a preferred map provider key (Mapbox) if you outgrow free OSM tiles,
-and a Postgres database (managed PG + PostGIS, or Cloudflare D1 for an
-edge-native path).
+Optional later: competitor Place IDs (to chart who replaces you where), Mapbox
+key if you outgrow free OSM tiles.
 
-### How to get Place IDs
-Use the Google **Places API** (Text Search / Place Details) to resolve a
-business name or Maps URL → Place ID + coordinates + address. Places API is for
-*identity and enrichment only* — **not** for ranking. Ranking must come from the
-Maps SERP source, because the Places result set is not the live Maps ordering a
-searcher sees.
-
-## 2. Cost model — read before choosing a grid
+## 3. Cost model — read before choosing a grid
 
 Every scan = **points × keywords × devices** separate SERP calls.
 
@@ -46,51 +51,26 @@ start there.** Recommended:
   near the business, sparse at the edges.
 - Offer "zoom into a weak area" as an on-demand denser second scan.
 
-This gives ~all the useful insight at a fraction of the cost.
+## 4. What to build next
 
-## 3. Recommended build order
-
-The foundation (grid, matching, rank, scoring, heatmap, provider interface) is
-done. Next, in order:
-
-1. **Wire DataForSEO live** — validate the adapter against a real sample, confirm
-   field mapping, retain raw JSON. *(adapter exists: `src/collect/dataForSeoProvider.ts`)*
-2. **Persistence** — implement a Postgres/PostGIS repository behind the existing
-   store seam (`schema.sql` is ready). Grids and points are permanent; scans and
-   results append over time.
-3. **Job queue** — one job per (keyword, point). BullMQ/Redis or Celery. Add rate
-   limiting, retries, and the anomaly-rerun pass (logic exists in `scan.ts`).
-4. **Scheduling** — recurring scans in a single tight time window per keyword so
-   heatmap colour reflects geography, not time drift.
-5. **Multi-tenant API + auth** — businesses, keywords, grids, scans as real
-   resources; the heatmap becomes a data-driven page, not a regenerated file.
-6. **History & alerts** — Share-of-Local-Voice over time, movement alerts,
-   competitor-change alerts.
-7. **Second surface** — add Google Search local 3-pack as a *separate* tracker
+1. **Auth / multi-tenant** — the dashboard is currently open; add login before
+   sharing the URL beyond yourselves.
+2. **Second surface** — Google Search local 3-pack as a *separate* tracker
    (never mixed with Maps). Keep mobile and desktop separate too.
+3. **Postgres/PostGIS option** — D1 (SQLite) works today; migrate behind the
+   store seam (`schema.sql` is the PG target) if richer geo queries are needed.
+4. **Mobile vs desktop device split** in scans and history.
 
-## 4. Accuracy practices already designed in (keep them)
+## 5. Accuracy practices already designed in (keep them)
 
 - Permanent, identical coordinates every scan (deterministic point IDs).
 - Place-ID-first matching; `null` rank means "looked to depth N, not found" —
   never stored as depth+1.
-- Anomaly retry for isolated bad pins.
+- Anomaly retry for isolated bad pins; per-pin retry on failed collections.
 - Raw payload retention for auditing and re-parsing.
 - Signed-out, non-personalised, fixed language/country/zoom/device.
 - Depth ≥ 20 so "not in top 20" is meaningful.
 
-To add operationally: keep the **collection IP geographically compatible** with
-the scan region (UK IP + `en-GB` + Europe/London for UK scans). A specialist
-provider handles IP reputation, CAPTCHAs, and retries — another reason to start
-with one rather than a self-built browser fleet.
-
-## 5. Open decisions for you
-
-1. **Scale**: how many businesses and keywords in v1? (drives cost & queue design)
-2. **Cloudflare-native or classic?** Pages + Workers + **D1** + Queues + R2 keeps
-   everything on Cloudflare (cheap, edge, but D1 is SQLite — no PostGIS). Versus
-   Pages front-end + a managed Postgres/PostGIS backend (richer geo queries).
-   Recommendation: **managed Postgres + PostGIS** — you will want real geo
-   queries; keep Pages just for the viewer.
-3. **Map tiles**: free OSM (fine to start) vs Mapbox (nicer, needs a key).
-4. **Rotate the global API key to a scoped token?** (recommended yes)
+Operationally: keep the **collection IP geographically compatible** with the
+scan region (UK IP + `en-GB` + Europe/London for UK scans) — the SERP provider
+handles IP reputation, CAPTCHAs, and retries.

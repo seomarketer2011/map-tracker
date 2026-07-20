@@ -123,14 +123,15 @@ repeatable measurement of how Maps visibility changes by search origin.** That i
 accurate enough to measure SEO improvement, find geographic weak spots, and
 compare against competitors consistently.
 
-## What this is not (yet)
+## Offline demo vs live app
 
-The demo's rankings are **mock data**, not live Google results. To produce real
-numbers you need a Maps SERP source (DataForSEO keys) — see
-`docs/NEXT-STEPS.md` for exactly what's required and the recommended build order.
+The **live app** (link above) uses real Google Maps data via DataForSEO. The
+`npm run demo` command is separate: it runs the offline engine with **mock
+data** and overwrites `web/index.html` locally — don't deploy that output over
+the live dashboard.
 
 ## Docs
 
-- `docs/NEXT-STEPS.md` — what we need from you, costs, and the roadmap
+- `docs/NEXT-STEPS.md` — what's done, costs, and what to build next
 - `docs/DEPLOY.md` — Cloudflare Pages deployment & credential safety
 - `schema.sql` — canonical PostgreSQL + PostGIS schema
