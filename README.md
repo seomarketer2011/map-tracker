@@ -21,8 +21,11 @@ re-scans automatically and raises alerts on drops.
 
 - **Find listing** — typeahead over the Google business-listings database
   (`/api/suggest`), auto-selected by website domain.
-- **Live scan** — one business + one keyword grid scan (`/api/scan`), saved to history.
-- **Businesses** — dashboard of every tracked business; bulk CSV import.
+- **Live scan** — grid scans run through an async queue (`/api/scan`), saved to
+  history. Keywords are grouped under a business, and multiple keywords scan in
+  parallel batches; bigger grid sizes are supported.
+- **Businesses** — dashboard of every tracked business; bulk CSV import;
+  businesses and keywords can be deleted (with an in-app confirmation modal).
 - **History & Compare** — pick any two scans (or "vs last") → **change heatmap**
   (green improved / red worse per pin), metric deltas, and a Share-of-Local-Voice
   **trend chart** over time.
@@ -30,6 +33,9 @@ re-scans automatically and raises alerts on drops.
   can correlate actions with ranking movement.
 - **Alerts** — the weekly Worker flags a ≥10-pt SoLV drop or falling out of the
   local 3-pack (optional email via Resend).
+- **Accuracy safeguards** — per-pin retry on failed collections, anomaly
+  re-checks (an isolated bad pin is re-collected before it's trusted), and
+  deeper competitor data per pin.
 
 Backend: Cloudflare Pages + Pages Functions + **D1** (SQLite) + a scheduled Worker.
 Credentials live as Cloudflare secrets, never in the client or repo.
