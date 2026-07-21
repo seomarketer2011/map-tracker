@@ -332,7 +332,7 @@ function clearChosen(){
 function newScan(){ clearChosen(); showView("scan"); }
 function ready(){ const kws=$("keyword").value.split(/[\n,]/).map(s=>s.trim()).filter(Boolean); $("run").disabled=!(chosen&&kws.length);
   const gs=+$("gridSize").value, pts=gs*gs, n=Math.max(1,kws.length);
-  $("cost").textContent=pts+" points"+(n>1?" × "+n+" keywords":"")+" · est. $"+(pts*n*0.004).toFixed(2)+" (Google local pack) · pins over water are skipped free"; }
+  $("cost").textContent=pts+" points"+(n>1?" × "+n+" keywords":"")+" · est. up to $"+(pts*n*0.004).toFixed(2)+" (Google local pack) · pins over water are skipped free, so coastal grids cost less"; }
 $("keyword").addEventListener("input",ready); ["gridSize","spacingM","device"].forEach(id=>$(id).addEventListener("change",ready)); ready();
 
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -352,14 +352,15 @@ $("run").onclick=async()=>{
     $("status").innerHTML='<span class="spin"></span>Queuing scan…';
     const res=await api.post("/api/scan-async",{...biz,keywords,gridSize:gs,spacingM,device});
     if(res.error)throw new Error(res.error);
-    pollJobs(res.jobs); // runs in background; safe to leave the page
+    pollJobs(res.jobs,res.skippedWaterPoints||0); // runs in background; safe to leave the page
     const skipped=res.skippedWaterPoints?(' Skipped '+res.skippedWaterPoints+' water pin'+(res.skippedWaterPoints>1?'s':'')+' — no charge.'):'';
     $("status").innerHTML='<span class="spin"></span>Scan queued — running on the server. You can leave this page.'+skipped;
   }catch(e){$("status").textContent="";$("err").textContent="Scan failed: "+e.message;}
   finally{$("run").disabled=false;}
 };
-async function pollJobs(jobs){
+async function pollJobs(jobs,skippedWater){
   const ids=jobs.map(j=>j.jobId), total=jobs.reduce((a,j)=>a+j.totalPoints,0), rendered={};
+  const skipNote=skippedWater?' · '+skippedWater+' water pin'+(skippedWater>1?'s':'')+' skipped free':'';
   for(;;){
     let st; try{ ({jobs:st}=await api.get("/api/jobs?ids="+ids.join(","))); }catch(e){ await sleep(2500); continue; }
     const done=st.reduce((a,j)=>a+(j.done||0),0);
@@ -373,8 +374,8 @@ async function pollJobs(jobs){
     const failed=st.filter(j=>j.status==='failed');
     const all=st.every(j=>['complete','failed','unknown'].includes(j.status));
     $("status").innerHTML=all
-      ? ('Saved '+(jobs.length-failed.length)+'/'+jobs.length+' keyword'+(jobs.length>1?'s':'')+' to history'+(failed.length?' · '+failed.length+' failed':''))
-      : ('<span class="spin"></span>Scanning '+done+'/'+total+' points on the server…');
+      ? ('Saved '+(jobs.length-failed.length)+'/'+jobs.length+' keyword'+(jobs.length>1?'s':'')+' to history'+(failed.length?' · '+failed.length+' failed':'')+skipNote)
+      : ('<span class="spin"></span>Scanning '+done+'/'+total+' points on the server…'+skipNote);
     if(all)break;
     await sleep(1500);
   }
