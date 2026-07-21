@@ -22,7 +22,7 @@ export const onRequestGet: PagesFunction<DBEnv> = async ({ env }) => {
     }
     byBusiness.get(bk).keywords.push({
       id: t.id, keyword: t.keyword, device: t.device, gridSize: t.grid_size, spacingM: t.spacing_m,
-      scanCount: t.scan_count, lastScan: t.last_scan, lastSolv: t.last_solv, autoWeekly: t.auto_weekly,
+      scanCount: t.scan_count, lastScan: t.last_scan, lastSolv: t.last_solv, prevSolv: t.prev_solv, autoWeekly: t.auto_weekly,
     });
   }
   const businesses = [...byBusiness.values()].map((b) => {

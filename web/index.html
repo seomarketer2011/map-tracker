@@ -62,13 +62,34 @@
   .err { color:var(--bad); font-size:13px; margin-top:8px; }
   .item { border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-bottom:8px; cursor:pointer; }
   .item:hover { background:#8881; } .item .t { font-weight:600; } .item .s { font-size:12px; color:var(--muted); }
-  .biz { border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-bottom:10px; }
-  .biz .t { font-weight:600; } .biz .s { font-size:12px; color:var(--muted); margin-bottom:2px; }
-  .kw { display:flex; align-items:center; gap:8px; padding:7px 0; border-top:1px solid var(--line); margin-top:6px; cursor:pointer; font-size:13px; }
-  .kw:hover .kwn { color:var(--accent); }
-  .kwn { font-weight:600; } .kws2 { color:var(--muted); font-size:12px; flex:1; text-align:right; }
+  .biz { border:1px solid var(--line); border-radius:10px; margin-bottom:10px; overflow:hidden; }
+  .bizhead { display:flex; align-items:center; gap:8px; padding:10px 12px; cursor:pointer; }
+  .bizhead:hover { background:#8881; }
+  .bizhead .caret { color:var(--muted); font-size:11px; flex:0 0 12px; }
+  .bizhead .bmain { flex:1; min-width:0; }
+  .bizhead .bt { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .bizhead .bs { font-size:11px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .bizbody { border-top:1px solid var(--line); padding:2px 12px 10px; }
+  .kwrow { display:grid; grid-template-columns:minmax(0,1fr) auto auto auto auto; gap:8px; align-items:center; padding:7px 0; border-bottom:1px solid var(--line); font-size:13px; cursor:pointer; }
+  .kwrow:hover .kwn { color:var(--accent); }
+  .kwn { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .kwmeta { color:var(--muted); font-size:12px; white-space:nowrap; }
+  .chip { display:inline-block; min-width:44px; text-align:center; font-size:11px; font-weight:700; padding:2px 7px; border-radius:999px; }
+  .chip.g { background:#1a985022; color:var(--good); }
+  .chip.a { background:#f0ad4e2b; color:#b47708; }
+  .chip.r { background:#d3333318; color:var(--bad); }
+  .chip.n { background:#8882; color:var(--muted); }
+  .tr { font-size:11px; font-weight:700; min-width:26px; text-align:right; }
+  .kebab { flex:0 0 auto; width:26px; height:26px; padding:0; border:none; background:transparent; color:var(--muted); font-size:16px; line-height:1; border-radius:6px; cursor:pointer; }
+  .kebab:hover { background:#8882; color:inherit; }
+  .menu { position:fixed; z-index:1500; background:Canvas; color:CanvasText; border:1px solid var(--line); border-radius:10px; box-shadow:0 10px 30px #0005; min-width:170px; overflow:hidden; }
+  .menu button { display:block; width:100%; border:none; border-radius:0; background:transparent; text-align:left; padding:9px 12px; font-size:13px; cursor:pointer; }
+  .menu button:hover { background:#8881; }
+  .menu button.danger { color:var(--bad); }
+  .toolbar { display:flex; gap:8px; margin:10px 0 12px; }
+  .toolbar input { flex:1; } .toolbar select { flex:0 0 130px; width:auto; }
   .scanrow { display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid var(--line); font-size:13px; }
-  .scanrow .when { flex:1; } .scanrow .sv { color:var(--muted); }
+  .scanrow .when { flex:1; } .scanrow .sv { color:var(--muted); white-space:nowrap; }
   .leaflet-tooltip.pin-label { background:transparent; border:none; box-shadow:none; padding:0; font-weight:700; color:#1a1a1a; font-size:11px; }
   .leaflet-tooltip.pin-label::before { display:none; }
   #status { font-size:13px; color:var(--muted); margin-top:10px; }
@@ -147,6 +168,14 @@
     <!-- BUSINESSES -->
     <div id="view-businesses" class="view pad hidden">
       <h1>Tracked businesses</h1>
+      <div class="toolbar">
+        <input id="bizSearch" autocomplete="off" placeholder="Search businesses or keywords…" />
+        <select id="bizSort" title="Sort businesses">
+          <option value="name">Name</option>
+          <option value="recent">Last scan</option>
+          <option value="solv">Best SoLV</option>
+        </select>
+      </div>
       <div id="targetList"><div class="note">Loading…</div></div>
       <h2>Bulk import (CSV)</h2>
       <p class="note">Columns: name, keyword, lat, lng, website, placeId, device. One business per row.</p>
@@ -158,6 +187,7 @@
     <!-- HISTORY -->
     <div id="view-history" class="view pad hidden">
       <h1 id="histTitle">History</h1>
+      <div class="kwtabs" id="histKwTabs"></div>
       <div id="histEmpty" class="note">Select a business, or run a scan first.</div>
       <div id="histBody" class="hidden">
         <button class="mini danger" id="delFromHistory" style="margin-bottom:6px">🗑 Delete this keyword &amp; history</button>
@@ -403,37 +433,100 @@ function renderMetrics(s,prev){
 }
 
 // ---- businesses ----
+let bizData=[]; const bizOpenState=new Map(); // businessKey -> user's explicit open/closed choice
+function solvChip(v){ if(v==null)return'<span class="chip n">—</span>'; return '<span class="chip '+(v>=.35?'g':v>=.15?'a':'r')+'" title="Share of Local Voice">'+pct(v)+'</span>'; }
+function trendArrow(last,prev){
+  if(last==null||prev==null)return'<span class="tr"></span>';
+  const d=(last-prev)*100;
+  if(Math.abs(d)<0.5)return'<span class="tr" style="color:var(--muted)" title="No change vs previous scan">=</span>';
+  return d>0?'<span class="tr up" title="Up '+d.toFixed(0)+' pts vs previous scan">▲'+d.toFixed(0)+'</span>'
+            :'<span class="tr down" title="Down '+Math.abs(d).toFixed(0)+' pts vs previous scan">▼'+Math.abs(d).toFixed(0)+'</span>';
+}
+function closeMenu(){ const m=$("ctxmenu"); if(m)m.remove(); }
+function openMenu(anchor,items){
+  closeMenu();
+  const m=document.createElement("div"); m.className="menu"; m.id="ctxmenu";
+  m.innerHTML=items.map((it,i)=>'<button class="'+(it.danger?"danger":"")+'" data-mi="'+i+'">'+it.label+'</button>').join("");
+  document.body.appendChild(m);
+  const r=anchor.getBoundingClientRect();
+  m.style.top=Math.min(r.bottom+4,innerHeight-m.offsetHeight-8)+"px";
+  m.style.left=Math.min(r.left,innerWidth-m.offsetWidth-8)+"px";
+  m.querySelectorAll("[data-mi]").forEach(b=>b.onclick=(e)=>{e.stopPropagation();closeMenu();items[+b.dataset.mi].fn();});
+  setTimeout(()=>document.addEventListener("click",closeMenu,{once:true}),0);
+}
+$("panel").addEventListener("scroll",closeMenu,{passive:true});
 async function loadBusinesses(){
-  const {businesses=[]}=await api.get("/api/targets");
-  $("targetList").innerHTML=businesses.length?businesses.map(bz=>
-    '<div class="biz"><div class="t">'+esc(bz.name)+
-      ' <span style="float:right"><button class="mini" data-add=\''+esc(JSON.stringify(bz))+'\'>+ keyword</button> '+
-      '<button class="mini danger" data-delbiz="'+esc(bz.businessKey)+'" title="Delete this business and all its keywords">🗑 delete</button></span></div>'+
-      (bz.website?'<div class="s">'+esc(bz.website)+'</div>':'')+
-      bz.keywords.map(k=>'<div class="kw" data-id="'+k.id+'"><span class="kwn">"'+esc(k.keyword)+'"</span>'+
-        '<span class="kws2">'+k.device+' · '+(k.scanCount||0)+' scans'+(k.lastSolv!=null?' · SoLV '+pct(k.lastSolv):'')+'</span>'+
-        '<button class="mini danger" data-del="'+k.id+'" title="Delete this keyword">🗑</button></div>').join('')+
-    '</div>'
-  ).join(""):'<div class="note">No businesses yet — run a scan.</div>';
-  $("targetList").querySelectorAll(".kw").forEach(el=>el.onclick=(e)=>{
-    if(e.target.dataset.del){delTarget(e.target.dataset.del);e.stopPropagation();return;}
+  ({businesses:bizData=[]}=await api.get("/api/targets"));
+  renderBusinesses();
+}
+function renderBusinesses(){
+  const q=($("bizSearch").value||"").trim().toLowerCase(), sort=$("bizSort").value;
+  const hit=bz=>!q||bz.name.toLowerCase().includes(q)||(bz.website||"").toLowerCase().includes(q)||bz.keywords.some(k=>k.keyword.toLowerCase().includes(q));
+  const lastMs=bz=>bz.keywords.reduce((a,k)=>Math.max(a,k.lastScan?Date.parse(k.lastScan):0),0);
+  const best=bz=>bz.keywords.reduce((a,k)=>Math.max(a,k.lastSolv==null?-1:k.lastSolv),-1);
+  const list=bizData.filter(hit).sort(sort==="recent"?(a,b)=>lastMs(b)-lastMs(a):sort==="solv"?(a,b)=>best(b)-best(a):(a,b)=>a.name.localeCompare(b.name));
+  if(!list.length){$("targetList").innerHTML='<div class="note">'+(bizData.length?"Nothing matches that search.":"No businesses yet — run a scan.")+'</div>';return;}
+  // Searching (or a short list) auto-expands; otherwise honour the user's toggles.
+  const openByDefault=!!q||list.length<=2;
+  $("targetList").innerHTML=list.map(bz=>{
+    const open=bizOpenState.has(bz.businessKey)?bizOpenState.get(bz.businessKey):openByDefault;
+    const last=lastMs(bz), b=best(bz), n=bz.keywords.length;
+    const head='<div class="bizhead" data-bk="'+esc(bz.businessKey)+'" data-open="'+(open?1:0)+'">'+
+      '<span class="caret">'+(open?"▾":"▸")+'</span>'+
+      '<div class="bmain"><div class="bt">'+esc(bz.name)+'</div>'+
+      '<div class="bs">'+n+' keyword'+(n===1?"":"s")+(bz.website?' · '+esc(bz.website):'')+
+        (last?' · last scan '+new Date(last).toLocaleDateString():' · no scans yet')+'</div></div>'+
+      (b>=0?solvChip(b):'')+
+      '<button class="kebab" data-bizmenu="'+esc(bz.businessKey)+'" title="Business actions">⋯</button></div>';
+    const rows=bz.keywords.map(k=>'<div class="kwrow" data-id="'+k.id+'">'+
+      '<span class="kwn" title="'+esc(k.keyword)+' ('+k.device+')">"'+esc(k.keyword)+'"</span>'+
+      '<span class="kwmeta" title="'+k.device+' · '+(k.scanCount||0)+' scan'+(k.scanCount===1?"":"s")+'">'+(k.device==="desktop"?"🖥":"📱")+' '+(k.scanCount||0)+'</span>'+
+      solvChip(k.lastSolv)+trendArrow(k.lastSolv,k.prevSolv)+
+      '<button class="kebab" data-kwmenu="'+k.id+'" title="Keyword actions">⋯</button></div>').join("");
+    const body=open?'<div class="bizbody">'+rows+'<button class="mini" style="margin-top:8px" data-addkey="'+esc(bz.businessKey)+'">+ Add keyword</button></div>':'';
+    return '<div class="biz">'+head+body+'</div>';
+  }).join("");
+  wireBusinessList();
+}
+function wireBusinessList(){
+  const findBiz=bk=>bizData.find(b=>b.businessKey===bk);
+  $("targetList").querySelectorAll(".bizhead").forEach(h=>h.onclick=(e)=>{
+    if(e.target.closest(".kebab"))return;
+    bizOpenState.set(h.dataset.bk,h.dataset.open!=="1");
+    renderBusinesses();
+  });
+  $("targetList").querySelectorAll(".kwrow").forEach(el=>el.onclick=(e)=>{
+    if(e.target.closest(".kebab"))return;
     currentTargetId=el.dataset.id; showView("history");
   });
-  $("targetList").querySelectorAll("[data-add]").forEach(b=>b.onclick=(e)=>{
-    e.stopPropagation();
-    const bz=JSON.parse(b.dataset.add);
-    clearChosen();
-    choose({name:bz.name,placeId:bz.placeId,cid:bz.cid,domain:bz.website,address:bz.website||"",lat:bz.lat,lng:bz.lng});
-    showView("scan"); $("keyword").focus();
+  $("targetList").querySelectorAll("[data-addkey]").forEach(b=>b.onclick=(e)=>{e.stopPropagation();addKeywordFor(findBiz(b.dataset.addkey));});
+  $("targetList").querySelectorAll("[data-bizmenu]").forEach(b=>b.onclick=(e)=>{
+    e.stopPropagation(); const bz=findBiz(b.dataset.bizmenu); if(!bz)return;
+    openMenu(b,[
+      {label:"+ Add keyword",fn:()=>addKeywordFor(bz)},
+      {label:"🗑 Delete business &amp; history",danger:true,fn:()=>delBusiness(bz)},
+    ]);
   });
-  $("targetList").querySelectorAll("[data-delbiz]").forEach(b=>b.onclick=async(e)=>{
-    e.stopPropagation();
-    const bz=businesses.find(x=>x.businessKey===b.dataset.delbiz);
-    const n=bz?bz.keywords.length:0;
-    if(!await confirmDialog("Delete “"+(bz?bz.name:"this business")+"” and all "+n+" keyword"+(n===1?"":"s")+" plus every scan under it? This cannot be undone.",{title:"Delete whole business",okLabel:"Delete business"}))return;
-    await api.del("/api/targets?businessKey="+encodeURIComponent(b.dataset.delbiz)); loadBusinesses();
+  $("targetList").querySelectorAll("[data-kwmenu]").forEach(b=>b.onclick=(e)=>{
+    e.stopPropagation(); const id=b.dataset.kwmenu;
+    openMenu(b,[
+      {label:"View history",fn:()=>{currentTargetId=id;showView("history");}},
+      {label:"🗑 Delete keyword &amp; history",danger:true,fn:()=>delTarget(id)},
+    ]);
   });
 }
+function addKeywordFor(bz){
+  if(!bz)return; clearChosen();
+  choose({name:bz.name,placeId:bz.placeId,cid:bz.cid,domain:bz.website,address:bz.website||"",lat:bz.lat,lng:bz.lng});
+  showView("scan"); $("keyword").focus();
+}
+async function delBusiness(bz){
+  const n=bz.keywords.length;
+  if(!await confirmDialog("Delete “"+bz.name+"” and all "+n+" keyword"+(n===1?"":"s")+" plus every scan under it? This cannot be undone.",{title:"Delete whole business",okLabel:"Delete business"}))return;
+  await api.del("/api/targets?businessKey="+encodeURIComponent(bz.businessKey)); loadBusinesses();
+}
+$("bizSearch").addEventListener("input",debounce(renderBusinesses,150));
+$("bizSort").addEventListener("change",renderBusinesses);
 async function delTarget(id){ if(!await confirmDialog("Delete this keyword and its scan history? This cannot be undone."))return; await api.del("/api/targets?id="+id); loadBusinesses(); }
 $("importBtn").onclick=async()=>{
   const rows=$("csv").value.trim().split("\n").map(l=>l.split(",").map(x=>x.trim())).filter(r=>r.length>=4);
@@ -444,8 +537,20 @@ $("importBtn").onclick=async()=>{
 };
 
 // ---- history + compare ----
+// Sibling-keyword tabs: flip between a business's keywords without leaving History.
+async function renderHistKwTabs(targetId){
+  try{
+    const {businesses=[]}=await api.get("/api/targets");
+    const bz=businesses.find(b=>b.keywords.some(k=>k.id===targetId));
+    const el=$("histKwTabs");
+    if(!bz||bz.keywords.length<2){el.innerHTML="";return;}
+    el.innerHTML=bz.keywords.map(k=>'<button class="mini'+(k.id===targetId?" active":"")+'" data-histkw="'+esc(k.id)+'">"'+esc(k.keyword)+'"</button>').join("");
+    el.querySelectorAll("[data-histkw]").forEach(b=>b.onclick=()=>{currentTargetId=b.dataset.histkw;loadHistory(b.dataset.histkw);});
+  }catch(e){/* tabs are a nicety — never block the history view */}
+}
 async function loadHistory(targetId){
   $("histEmpty").classList.add("hidden");
+  renderHistKwTabs(targetId);
   historyData=await api.get("/api/history?targetId="+targetId);
   if(historyData.error){$("histEmpty").classList.remove("hidden");$("histEmpty").textContent=historyData.error;$("histBody").classList.add("hidden");return;}
   const {target,scans,annotations}=historyData;
@@ -459,7 +564,11 @@ async function loadHistory(targetId){
   const opts=scans.map(s=>'<option value="'+s.id+'">'+new Date(s.ran_at).toLocaleString()+' — SoLV '+pct(s.solv)+'</option>').join("");
   $("cmpA").innerHTML=opts; $("cmpB").innerHTML=opts;
   if(scans.length>=2){ $("cmpA").selectedIndex=1; $("cmpB").selectedIndex=0; }
-  $("scanList").innerHTML=scans.map(s=>'<div class="scanrow"><span class="when">'+new Date(s.ran_at).toLocaleString()+'</span><span class="sv">SoLV '+pct(s.solv)+' · top3 '+pct(s.pct_top3)+' · med '+(s.median_rank??"—")+'</span> <button class="mini" data-scan="'+s.id+'">Map</button></div>').join("")||'<div class="note">No scans yet.</div>';
+  $("scanList").innerHTML=scans.map((s,i)=>{const prev=scans[i+1];
+    return '<div class="scanrow"><span class="when">'+new Date(s.ran_at).toLocaleString()+'</span>'+
+      solvChip(s.solv)+trendArrow(s.solv,prev?prev.solv:null)+
+      '<span class="sv">top3 '+pct(s.pct_top3)+' · med '+(s.median_rank??"—")+'</span> <button class="mini" data-scan="'+s.id+'">Map</button></div>';
+  }).join("")||'<div class="note">No scans yet.</div>';
   $("scanList").querySelectorAll("[data-scan]").forEach(b=>b.onclick=async()=>{const d=await api.get("/api/scan-detail?id="+b.dataset.scan);renderAbsolute(d.points);renderMetrics(d.score);$("legendDiff").classList.add("hidden");});
   renderAnnos(annotations);
   // Load latest scan on map by default.

@@ -81,7 +81,8 @@ export async function listTargets(env: DBEnv): Promise<any[]> {
   const { results } = await env.DB.prepare(
     `SELECT t.*, (SELECT COUNT(*) FROM scans s WHERE s.target_id=t.id) AS scan_count,
             (SELECT MAX(ran_at) FROM scans s WHERE s.target_id=t.id) AS last_scan,
-            (SELECT solv FROM scans s WHERE s.target_id=t.id ORDER BY ran_at DESC LIMIT 1) AS last_solv
+            (SELECT solv FROM scans s WHERE s.target_id=t.id ORDER BY ran_at DESC LIMIT 1) AS last_solv,
+            (SELECT solv FROM scans s WHERE s.target_id=t.id ORDER BY ran_at DESC LIMIT 1 OFFSET 1) AS prev_solv
      FROM targets t ORDER BY t.name`,
   ).all();
   return results ?? [];
