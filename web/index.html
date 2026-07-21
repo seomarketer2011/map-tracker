@@ -298,7 +298,7 @@ function clearChosen(){
 function newScan(){ clearChosen(); showView("scan"); }
 function ready(){ const kws=$("keyword").value.split(/[\n,]/).map(s=>s.trim()).filter(Boolean); $("run").disabled=!(chosen&&kws.length);
   const gs=+$("gridSize").value, pts=gs*gs, n=Math.max(1,kws.length);
-  $("cost").textContent=pts+" points"+(n>1?" × "+n+" keywords":"")+" · est. $"+(pts*n*0.004).toFixed(2)+" (Google local pack)"; }
+  $("cost").textContent=pts+" points"+(n>1?" × "+n+" keywords":"")+" · est. $"+(pts*n*0.004).toFixed(2)+" (Google local pack) · pins over water are skipped free"; }
 $("keyword").addEventListener("input",ready); ["gridSize","spacingM","device"].forEach(id=>$(id).addEventListener("change",ready)); ready();
 
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -318,7 +318,8 @@ $("run").onclick=async()=>{
     const res=await api.post("/api/scan-async",{...biz,keywords,gridSize:gs,spacingM,device});
     if(res.error)throw new Error(res.error);
     pollJobs(res.jobs); // runs in background; safe to leave the page
-    $("status").innerHTML='<span class="spin"></span>Scan queued — running on the server. You can leave this page.';
+    const skipped=res.skippedWaterPoints?(' Skipped '+res.skippedWaterPoints+' water pin'+(res.skippedWaterPoints>1?'s':'')+' — no charge.'):'';
+    $("status").innerHTML='<span class="spin"></span>Scan queued — running on the server. You can leave this page.'+skipped;
   }catch(e){$("status").textContent="";$("err").textContent="Scan failed: "+e.message;}
   finally{$("run").disabled=false;}
 };

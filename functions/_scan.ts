@@ -13,6 +13,7 @@ import {
   type ScoredPoint, type SerpBusiness, type Observation,
 } from "./_core";
 import { targetId, randomId, upsertTarget, insertScan, type DBEnv } from "./_db";
+import { splitByWater } from "./_water";
 
 const ENDPOINT = "https://api.dataforseo.com/v3/serp/google/local_finder/live/advanced";
 
@@ -37,6 +38,8 @@ export interface ScanOutput {
   business: { name: string; placeId: string | null; website: string | null; location: { lat: number; lng: number } };
   keyword: string; device: string; gridSize: number; spacingM: number;
   dataSource: "live"; estCostUsd: number;
+  /** Grid pins that fell on water and were never searched (no charge). */
+  skippedWaterPoints?: number;
   points: any[]; score: ReturnType<typeof scoreScan>;
 }
 
@@ -162,15 +165,28 @@ export function buildScanOutput(input: ScanInput, scanned: ScannedPoint[]): Scan
 }
 
 /** Single-shot full-grid scan (used by the cron Worker and legacy /api/scan). */
-export async function runGridScan(creds: { login: string; password: string }, input: ScanInput, concurrency = 24): Promise<ScanOutput> {
+export async function runGridScan(
+  creds: { login: string; password: string },
+  input: ScanInput,
+  concurrency = 24,
+  opts: { waterFilter?: boolean } = {},
+): Promise<ScanOutput> {
   const grid = buildGrid(input);
+  // Never pay for a SERP at a pin that sits in the sea, a river or a lake —
+  // nobody searches from there, so it's pure wasted spend.
+  const { land, water } = opts.waterFilter === false
+    ? { land: grid, water: [] as typeof grid }
+    : await splitByWater(grid);
+  if (!land.length) throw new Error("Every grid point falls on water — move the centre or shrink the grid/spacing.");
   const params = {
     keyword: String(input.keyword).trim(), device: input.device === "desktop" ? "desktop" : "mobile",
     languageCode: String(input.languageCode ?? "en"), depth: Math.min(Math.max(Number(input.depth) || 20, 10), 100), target: toTarget(input),
   };
-  const scanned = await collectPoints(creds, params, grid, concurrency);
+  const scanned = await collectPoints(creds, params, land, concurrency);
   const { points } = await retryAnomalies(creds, params, scanned);
-  return buildScanOutput(input, points);
+  const out = buildScanOutput(input, points);
+  out.skippedWaterPoints = water.length;
+  return out;
 }
 
 export async function persistScan(env: DBEnv, out: ScanOutput, input: ScanInput): Promise<string | null> {

@@ -8,6 +8,7 @@
 
 import { json } from "../_http";
 import { buildGrid } from "../_scan";
+import { splitByWater } from "../_water";
 import { createJob, type QueueEnv } from "../_jobs";
 
 const BATCH = 40;
@@ -24,8 +25,14 @@ export const onRequestPost: PagesFunction<QueueEnv> = async ({ request, env }) =
   }
   const device = cfg.device === "desktop" ? "desktop" : "mobile";
   const languageCode = String(cfg.languageCode ?? "en");
-  const grid = buildGrid({ lat, lng, gridSize: cfg.gridSize, spacingM: cfg.spacingM });
-  const gridSize = Math.round(Math.sqrt(grid.length)); // square
+  const fullGrid = buildGrid({ lat, lng, gridSize: cfg.gridSize, spacingM: cfg.spacingM });
+  const gridSize = Math.round(Math.sqrt(fullGrid.length)); // square
+  // Drop pins that land on water before anything is enqueued — searches there
+  // cost money and can never contain a customer.
+  const { land: grid, water } = env.WATER_FILTER === "off"
+    ? { land: fullGrid, water: [] as typeof fullGrid }
+    : await splitByWater(fullGrid);
+  if (!grid.length) return json({ error: "Every grid point falls on water — move the pin or shrink the grid/spacing." }, 400);
   const spacingM = Math.min(Math.max(Number(cfg.spacingM) || 500, 50), 3000);
   const now = new Date().toISOString();
 
@@ -45,5 +52,9 @@ export const onRequestPost: PagesFunction<QueueEnv> = async ({ request, env }) =
     await env.SCAN_QUEUE.sendBatch(messages);
     jobs.push({ jobId, keyword, totalPoints: grid.length });
   }
-  return json({ jobs, estCostUsd: Math.round(grid.length * keywords.length * 0.004 * 1000) / 1000 });
+  return json({
+    jobs,
+    skippedWaterPoints: water.length,
+    estCostUsd: Math.round(grid.length * keywords.length * 0.004 * 1000) / 1000,
+  });
 };

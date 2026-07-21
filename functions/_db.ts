@@ -9,6 +9,8 @@ export interface DBEnv {
   DATAFORSEO_PASSWORD: string;
   RESEND_API_KEY?: string;
   ALERT_EMAIL_TO?: string;
+  /** Set to "off" to disable the water-pin filter (e.g. if OSM tiles are unreachable). */
+  WATER_FILTER?: string;
 }
 
 function fnv1a(s: string): string {

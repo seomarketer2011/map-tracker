@@ -36,6 +36,13 @@ re-scans automatically and raises alerts on drops.
 - **Accuracy safeguards** — per-pin retry on failed collections, anomaly
   re-checks (an isolated bad pin is re-collected before it's trusted), and
   deeper competitor data per pin.
+- **Water pins are never searched** — before any paid collection, every grid
+  pin is checked against an OSM land/water mask (sea, rivers, lakes) and water
+  pins are dropped. Nobody searches from the middle of the Mersey, so those
+  pins are pure wasted spend. Applies to queued scans, the legacy live scan,
+  client-batched scans and the weekly cron. Fail-open: if the mask can't be
+  fetched the pin is scanned normally. Set the `WATER_FILTER=off` env var to
+  disable.
 
 Backend: Cloudflare Pages + Pages Functions + **D1** (SQLite) + a scheduled Worker.
 Credentials live as Cloudflare secrets, never in the client or repo.

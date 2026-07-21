@@ -32,10 +32,18 @@ export const onRequestPost: PagesFunction<DBEnv> = async ({ request, env }) => {
     return json({ error: `Grid too large (${gridSize * gridSize} points). Max ${MAX_POINTS} for live scan.` }, 400);
   }
 
-  const out = await runGridScan(
-    { login: env.DATAFORSEO_LOGIN, password: env.DATAFORSEO_PASSWORD },
-    { ...cfg, lat, lng },
-  );
+  let out;
+  try {
+    out = await runGridScan(
+      { login: env.DATAFORSEO_LOGIN, password: env.DATAFORSEO_PASSWORD },
+      { ...cfg, lat, lng },
+      24,
+      { waterFilter: env.WATER_FILTER !== "off" },
+    );
+  } catch (e: any) {
+    if (String(e?.message ?? "").includes("water")) return json({ error: e.message }, 400);
+    throw e;
+  }
 
   let scanId: string | null = null;
   let targetId: string | null = null;

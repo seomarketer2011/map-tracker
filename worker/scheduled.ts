@@ -72,6 +72,8 @@ async function runWeekly(env: Env): Promise<{ scanned: number; alerts: number }>
           lat: t.lat, lng: t.lng, keyword: t.keyword, gridSize: t.grid_size, spacingM: t.spacing_m,
           device: t.device, languageCode: t.language_code,
         },
+        24,
+        { waterFilter: env.WATER_FILTER !== "off" }, // skip pins over water — wasted spend
       );
     } catch { continue; }
 
