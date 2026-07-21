@@ -90,6 +90,8 @@
   .toolbar input { flex:1; } .toolbar select { flex:0 0 130px; width:auto; }
   .scanrow { display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid var(--line); font-size:13px; }
   .scanrow .when { flex:1; } .scanrow .sv { color:var(--muted); white-space:nowrap; }
+  .maplabel { position:absolute; top:10px; left:50%; transform:translateX(-50%); z-index:1100; background:Canvas; color:CanvasText; border:1px solid var(--line); border-radius:999px; padding:5px 14px; font-size:12px; font-weight:600; box-shadow:0 2px 10px #0003; pointer-events:none; max-width:70%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .maplabel .sub { color:var(--muted); font-weight:400; }
   .leaflet-tooltip.pin-label { background:transparent; border:none; box-shadow:none; padding:0; font-weight:700; color:#1a1a1a; font-size:11px; }
   .leaflet-tooltip.pin-label::before { display:none; }
   #status { font-size:13px; color:var(--muted); margin-top:10px; }
@@ -225,7 +227,7 @@
       <div id="alertList"><div class="note">Loading…</div></div>
     </div>
   </div>
-  <div id="map"></div>
+  <div id="map"><div id="mapLabel" class="maplabel hidden"></div></div>
 </div>
 
 <div id="modal" class="modal-overlay hidden">
@@ -263,6 +265,9 @@ function confirmDialog(message,{title="Confirm deletion",okLabel="Delete"}={}){
   });
 }
 function colorFor(rank){ if(rank==null)return"#9e9e9e"; if(rank<=3)return"#1a9850"; if(rank<=10)return"#fee08b"; if(rank<=20)return"#f46d43"; return"#9e9e9e"; }
+// Floating pill at the top of the map saying what the pins currently show.
+function setMapLabel(html){ const el=$("mapLabel"); if(!el)return; if(html){el.innerHTML=html;el.classList.remove("hidden");}else{el.classList.add("hidden");} }
+function scanLabel(target,when){ return target?'"'+esc(target.keyword)+'" <span class="sub">— '+esc(target.name)+(when?' · '+new Date(when).toLocaleDateString():'')+'</span>':''; }
 
 let map=null, layer=null, chosen=null, currentTargetId=null, historyData=null;
 // Only one context may own the map at a time. A background scan draws only while
@@ -295,6 +300,7 @@ function showView(v){
     if(layer)layer.clearLayers();
     if(map&&scanView.center)map.setView(scanView.center,scanView.zoom||12);
     scanView.pins.forEach(drawPin);
+    setMapLabel(scanView.label||"");
   }
 }
 
@@ -320,12 +326,12 @@ function choose(s){
   chosen=s; $("suggest-list").style.display="none"; $("q").value=s.name;
   $("chosen").innerHTML='<div class="chosen"><div class="n">'+esc(s.name)+' <button class="mini" id="clearBiz" style="float:right">✕ change</button></div><div class="a">'+esc(s.address||"")+'</div><div class="ids">'+(s.domain?'site: '+esc(s.domain)+' · ':'')+'Place ID: '+esc(s.placeId||"—")+'</div></div>';
   $("clearBiz").onclick=clearChosen;
-  scanView=null; takeMap();
+  scanView=null; takeMap(); setMapLabel("");
   if(map&&s.lat&&s.lng){map.setView([s.lat,s.lng],13);layer.clearLayers();L.marker([s.lat,s.lng]).addTo(layer);}
   ready();
 }
 function clearChosen(){
-  chosen=null; scanView=null; takeMap(); $("chosen").innerHTML=""; $("q").value=""; $("website").value=""; $("keyword").value="";
+  chosen=null; scanView=null; takeMap(); setMapLabel(""); $("chosen").innerHTML=""; $("q").value=""; $("website").value=""; $("keyword").value="";
   $("suggest-list").style.display="none"; if(layer)layer.clearLayers(); if(map)map.setView([53.4,-2.98],10);
   $("scanResult").classList.add("hidden"); $("status").textContent=""; $("err").textContent=""; ready(); $("q").focus();
 }
@@ -347,7 +353,7 @@ $("run").onclick=async()=>{
   $("run").disabled=true; $("scanResult").classList.add("hidden");
   resultTabs=[]; activeScanId=null; renderKwTabs();
   scanView={owner:takeMap(),center:[chosen.lat,chosen.lng],zoom:(map?map.getZoom():12),pins:[]};
-  if(layer)layer.clearLayers(); if(map)map.setView(scanView.center,map.getZoom());
+  setMapLabel(""); if(layer)layer.clearLayers(); if(map)map.setView(scanView.center,map.getZoom());
   try{
     $("status").innerHTML='<span class="spin"></span>Queuing scan…';
     const res=await api.post("/api/scan-async",{...biz,keywords,gridSize:gs,spacingM,device});
@@ -392,8 +398,8 @@ async function showScanById(scanId){
   renderMetrics(d.score); $("scanResult").classList.remove("hidden"); $("legendAbs").innerHTML=absLegend();
   const c=d.score.dominantCompetitor; $("competitors").innerHTML=c?"<b>Top competitor:</b> "+esc(c.name)+" — wins "+c.wins+" pins":"";
   const ctr=centre(d.points);
-  scanView={owner:mapOwner,center:ctr?[ctr.lat,ctr.lng]:null,zoom:13,pins:d.points};
-  if(currentView==='scan'){ scanView.owner=takeMap(); if(layer)layer.clearLayers(); if(map&&scanView.center)map.setView(scanView.center,13); d.points.forEach(drawPin); }
+  scanView={owner:mapOwner,center:ctr?[ctr.lat,ctr.lng]:null,zoom:13,pins:d.points,label:scanLabel(d.target,d.ranAt)};
+  if(currentView==='scan'){ scanView.owner=takeMap(); if(layer)layer.clearLayers(); if(map&&scanView.center)map.setView(scanView.center,13); d.points.forEach(drawPin); setMapLabel(scanView.label); }
 }
 function drawPin(p){
   if(!layer)return;
@@ -570,15 +576,17 @@ async function loadHistory(targetId){
       solvChip(s.solv)+trendArrow(s.solv,prev?prev.solv:null)+
       '<span class="sv">top3 '+pct(s.pct_top3)+' · med '+(s.median_rank??"—")+'</span> <button class="mini" data-scan="'+s.id+'">Map</button></div>';
   }).join("")||'<div class="note">No scans yet.</div>';
-  $("scanList").querySelectorAll("[data-scan]").forEach(b=>b.onclick=async()=>{const d=await api.get("/api/scan-detail?id="+b.dataset.scan);renderAbsolute(d.points);renderMetrics(d.score);$("legendDiff").classList.add("hidden");});
+  $("scanList").querySelectorAll("[data-scan]").forEach(b=>b.onclick=async()=>{const d=await api.get("/api/scan-detail?id="+b.dataset.scan);renderAbsolute(d.points);setMapLabel(scanLabel(target,d.ranAt));renderMetrics(d.score);$("legendDiff").classList.add("hidden");});
   renderAnnos(annotations);
   // Load latest scan on map by default.
-  if(scans[0]){const d=await api.get("/api/scan-detail?id="+scans[0].id);renderAbsolute(d.points);renderMetrics(d.score);}
+  if(scans[0]){const d=await api.get("/api/scan-detail?id="+scans[0].id);renderAbsolute(d.points);setMapLabel(scanLabel(target,d.ranAt));renderMetrics(d.score);}
 }
 $("cmpBtn").onclick=async()=>{
   const a=$("cmpA").value,b=$("cmpB").value; if(!a||!b||a===b){alert("Pick two different scans");return;}
   const [A,B]=await Promise.all([api.get("/api/scan-detail?id="+a),api.get("/api/scan-detail?id="+b)]);
   renderDiff(A,B); renderCompareMetrics(A,B); $("legendDiff").classList.remove("hidden");
+  const t=historyData&&historyData.target;
+  if(t)setMapLabel('"'+esc(t.keyword)+'" <span class="sub">— '+new Date(A.ranAt).toLocaleDateString()+' vs '+new Date(B.ranAt).toLocaleDateString()+'</span>');
 };
 function key(p){return p.row+","+p.col;}
 function renderDiff(A,B){
