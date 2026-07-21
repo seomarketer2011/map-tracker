@@ -205,9 +205,9 @@
         <button class="primary" id="cmpBtn">Compare on map</button>
         <div id="cmpMetrics"></div>
         <div class="legend hidden" id="legendDiff">
-          <span><i class="dot" style="background:#1a9850"></i>Improved</span>
-          <span><i class="dot" style="background:#9e9e9e"></i>Same</span>
-          <span><i class="dot" style="background:#d33"></i>Worse</span>
+          <span><i class="dot" style="background:#00c853"></i>Improved</span>
+          <span><i class="dot" style="background:#2196f3"></i>Same</span>
+          <span><i class="dot" style="background:#ff1744"></i>Worse</span>
         </div>
         <h2>Scans</h2>
         <div id="scanList"></div>
@@ -265,7 +265,7 @@ function confirmDialog(message,{title="Confirm deletion",okLabel="Delete"}={}){
     $("modal").onclick=(e)=>{ if(e.target.id==="modal") close(false); }; // click backdrop = cancel
   });
 }
-function colorFor(rank){ if(rank==null)return"#9e9e9e"; if(rank<=3)return"#1a9850"; if(rank<=10)return"#fee08b"; if(rank<=20)return"#f46d43"; return"#9e9e9e"; }
+function colorFor(rank){ if(rank==null)return"#9e9e9e"; if(rank<=3)return"#00c853"; if(rank<=10)return"#fee08b"; if(rank<=20)return"#f46d43"; return"#9e9e9e"; }
 // Floating pill at the top of the map saying what the pins currently show.
 function setMapLabel(html){ const el=$("mapLabel"); if(!el)return; if(html){el.innerHTML=html;el.classList.remove("hidden");}else{el.classList.add("hidden");} }
 function fmtM(m){ return m>=1000?(m/1000).toFixed(m%1000?1:0)+" km":Math.round(m)+" m"; }
@@ -419,7 +419,7 @@ function drawPin(p){
 }
 $("toHistory").onclick=()=>showView("history");
 
-function absLegend(){return '<span><i class="dot" style="background:#1a9850"></i>1–3</span><span><i class="dot" style="background:#fee08b"></i>4–10</span><span><i class="dot" style="background:#f46d43"></i>11–20</span><span><i class="dot" style="background:#9e9e9e"></i>20+/none</span>';}
+function absLegend(){return '<span><i class="dot" style="background:#00c853"></i>1–3</span><span><i class="dot" style="background:#fee08b"></i>4–10</span><span><i class="dot" style="background:#f46d43"></i>11–20</span><span><i class="dot" style="background:#9e9e9e"></i>20+/none</span>';}
 
 function renderAbsolute(points){
   if(!layer)return; takeMap(); layer.clearLayers();
@@ -611,10 +611,10 @@ function renderDiff(A,B){
   const c=centre(B.points); if(c)map.setView([c.lat,c.lng],13);
   B.points.forEach(p=>{
     const a=amap[key(p)]; const ra=a?a.observation.rank:null, rb=p.observation.rank;
-    let color="#9e9e9e", txt="=";
-    if(ra==null&&rb!=null){color="#1a9850";txt="new";}
-    else if(ra!=null&&rb==null){color="#d33";txt="lost";}
-    else if(ra!=null&&rb!=null){const dd=ra-rb; if(dd>0){color="#1a9850";txt="+"+dd;} else if(dd<0){color="#d33";txt=String(dd);} else {color="#9e9e9e";txt="=";}}
+    let color="#2196f3", txt="=";
+    if(ra==null&&rb!=null){color="#00c853";txt="new";}
+    else if(ra!=null&&rb==null){color="#ff1744";txt="lost";}
+    else if(ra!=null&&rb!=null){const dd=ra-rb; if(dd>0){color="#00c853";txt="+"+dd;} else if(dd<0){color="#ff1744";txt=String(dd);} else {color="#2196f3";txt="=";}}
     const m=L.circleMarker([p.lat,p.lng],{radius:15,color:"#0006",weight:1,fillColor:color,fillOpacity:.85});
     m.bindTooltip(txt,{permanent:true,direction:"center",className:"pin-label"});
     m.bindPopup("<b>"+(ra==null?"×":ra)+" → "+(rb==null?"×":rb)+"</b><br>"+p.distanceM+" m from centre");
