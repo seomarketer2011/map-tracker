@@ -25,6 +25,8 @@
   button.mini.danger:hover { background:#d3331a; }
   button.mini.danger.solid { background:#d33; color:#fff; border:none; }
   button.mini.danger.solid:hover { background:#b71c1c; }
+  .kwtabs { display:flex; gap:6px; flex-wrap:wrap; margin:8px 0 2px; }
+  .kwtabs button.active { background:var(--accent); color:#fff; border-color:var(--accent); }
   .modal-overlay { position:fixed; inset:0; background:#0008; display:flex; align-items:center; justify-content:center; z-index:2000; padding:20px; }
   .modal-overlay.hidden { display:none; }
   .modal { background:Canvas; color:CanvasText; border:1px solid var(--line); border-radius:14px; padding:22px; max-width:380px; width:100%; box-shadow:0 16px 50px #0006; }
@@ -135,6 +137,7 @@
       <div id="err" class="err"></div>
       <div id="scanResult" class="hidden">
         <h2>Result <button class="mini" id="toHistory" style="float:right">View history →</button></h2>
+        <div class="kwtabs" id="kwTabs"></div>
         <div class="metrics" id="metrics"></div>
         <div class="legend" id="legendAbs"></div>
         <div id="competitors" class="note"></div>
@@ -236,6 +239,7 @@ let map=null, layer=null, chosen=null, currentTargetId=null, historyData=null;
 // it still owns the map, so navigating away can't get its pins painted onto
 // another view. scanView holds the current/last Scan-tab render for redraw.
 let mapOwner=0, scanView=null, currentView="scan";
+let resultTabs=[], activeScanId=null; // one tab per completed keyword in the current scan
 const takeMap=()=>++mapOwner;
 
 if (typeof L!=="undefined"){
@@ -311,6 +315,7 @@ $("run").onclick=async()=>{
   const gs=+$("gridSize").value, spacingM=+$("spacingM").value, device=$("device").value;
   const biz={name:chosen.name,placeId:chosen.placeId,cid:chosen.cid,website:chosen.domain,phone:chosen.phone,lat:chosen.lat,lng:chosen.lng};
   $("run").disabled=true; $("scanResult").classList.add("hidden");
+  resultTabs=[]; activeScanId=null; renderKwTabs();
   scanView={owner:takeMap(),center:[chosen.lat,chosen.lng],zoom:(map?map.getZoom():12),pins:[]};
   if(layer)layer.clearLayers(); if(map)map.setView(scanView.center,map.getZoom());
   try{
@@ -328,7 +333,13 @@ async function pollJobs(jobs){
   for(;;){
     let st; try{ ({jobs:st}=await api.get("/api/jobs?ids="+ids.join(","))); }catch(e){ await sleep(2500); continue; }
     const done=st.reduce((a,j)=>a+(j.done||0),0);
-    for(const j of st){ if(j.status==='complete'&&j.scanId&&!rendered[j.id]){ rendered[j.id]=true; await showScanById(j.scanId); } }
+    for(const j of st){ if(j.status==='complete'&&j.scanId&&!rendered[j.id]){ rendered[j.id]=true;
+      const kw=(jobs.find(x=>x.jobId===j.id)||{}).keyword||("keyword "+(resultTabs.length+1));
+      resultTabs.push({scanId:j.scanId,keyword:kw});
+      // Show the first keyword to finish; later ones just add a tab so the map
+      // the user is looking at isn't yanked away mid-read.
+      if(resultTabs.length===1) await showScanById(j.scanId); else renderKwTabs();
+    } }
     const failed=st.filter(j=>j.status==='failed');
     const all=st.every(j=>['complete','failed','unknown'].includes(j.status));
     $("status").innerHTML=all
@@ -338,9 +349,15 @@ async function pollJobs(jobs){
     await sleep(1500);
   }
 }
+function renderKwTabs(){
+  const el=$("kwTabs"); if(!el)return;
+  el.innerHTML=resultTabs.length>1?resultTabs.map(t=>
+    '<button class="mini'+(t.scanId===activeScanId?' active':'')+'" data-kwscan="'+esc(t.scanId)+'">"'+esc(t.keyword)+'"</button>').join(""):"";
+  el.querySelectorAll("[data-kwscan]").forEach(b=>b.onclick=()=>showScanById(b.dataset.kwscan));
+}
 async function showScanById(scanId){
   const d=await api.get("/api/scan-detail?id="+scanId); if(d.error)return;
-  currentTargetId=d.targetId;
+  currentTargetId=d.targetId; activeScanId=scanId; renderKwTabs();
   renderMetrics(d.score); $("scanResult").classList.remove("hidden"); $("legendAbs").innerHTML=absLegend();
   const c=d.score.dominantCompetitor; $("competitors").innerHTML=c?"<b>Top competitor:</b> "+esc(c.name)+" — wins "+c.wins+" pins":"";
   const ctr=centre(d.points);
