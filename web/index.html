@@ -9,8 +9,10 @@
   :root { color-scheme: light dark; --line:#8883; --muted:#7a7a7a; --accent:#1a73e8; --good:#1a9850; --bad:#d33; }
   * { box-sizing: border-box; }
   body { margin:0; font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
-  #app { display:grid; grid-template-columns:400px 1fr; height:100vh; }
+  #app { display:grid; grid-template-columns:var(--panelw,400px) 6px 1fr; height:100vh; }
   #panel { padding:0 0 40px; overflow-y:auto; border-right:1px solid var(--line); }
+  #dragbar { cursor:col-resize; background:transparent; }
+  #dragbar:hover, #dragbar.active { background:var(--accent); }
   #map { height:100vh; background:#8881; }
   .pad { padding:0 18px; }
   h1 { font-size:17px; margin:14px 0 2px; }
@@ -228,6 +230,7 @@
       <div id="alertList"><div class="note">Loading…</div></div>
     </div>
   </div>
+  <div id="dragbar" title="Drag to resize the panel · double-click to reset"></div>
   <div id="map"><div id="mapLabel" class="maplabel hidden"></div></div>
 </div>
 
@@ -288,6 +291,25 @@ if (typeof L!=="undefined"){
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"&copy; OpenStreetMap"}).addTo(map);
   layer=L.layerGroup().addTo(map);
 }
+
+// ---- resizable data panel ----
+(function(){
+  const bar=$("dragbar"); if(!bar)return;
+  const setW=(w)=>{document.documentElement.style.setProperty("--panelw",w+"px");if(map)map.invalidateSize();};
+  const saved=parseInt(localStorage.getItem("panelW")); if(saved)setW(saved);
+  let dragging=false;
+  bar.addEventListener("pointerdown",e=>{dragging=true;bar.classList.add("active");bar.setPointerCapture(e.pointerId);document.body.style.userSelect="none";e.preventDefault();});
+  bar.addEventListener("pointermove",e=>{
+    if(!dragging)return;
+    // clientX = desired panel width (panel sits at the left edge); keep both
+    // the panel and the map usable at any window size.
+    setW(Math.min(Math.max(e.clientX,300),Math.max(340,innerWidth-320)));
+  });
+  const end=()=>{ if(!dragging)return; dragging=false; bar.classList.remove("active"); document.body.style.userSelect="";
+    const w=parseInt(getComputedStyle(document.documentElement).getPropertyValue("--panelw")); if(w)localStorage.setItem("panelW",w); };
+  bar.addEventListener("pointerup",end); bar.addEventListener("pointercancel",end);
+  bar.addEventListener("dblclick",()=>{setW(400);localStorage.removeItem("panelW");});
+})();
 
 // ---- nav ----
 document.querySelectorAll(".nav button").forEach(b=>b.onclick=()=>showView(b.dataset.view));
