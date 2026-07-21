@@ -208,6 +208,7 @@ export async function persistScan(env: DBEnv, out: ScanOutput, input: ScanInput)
       strongest: out.score.strongestDirection, weakest: out.score.weakestDirection,
       dominant_json: out.score.dominantCompetitor ? JSON.stringify(out.score.dominantCompetitor) : null,
       est_cost: out.estCostUsd, points_json: JSON.stringify(out.points),
+      grid_size: out.gridSize, spacing_m: out.spacingM,
     });
     return scanId;
   } catch { return null; }

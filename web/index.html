@@ -192,6 +192,7 @@
       <div class="kwtabs" id="histKwTabs"></div>
       <div id="histEmpty" class="note">Select a business, or run a scan first.</div>
       <div id="histBody" class="hidden">
+        <div class="note" id="histMeta" style="margin-bottom:8px"></div>
         <button class="mini danger" id="delFromHistory" style="margin-bottom:6px">🗑 Delete this keyword &amp; history</button>
         <h2>Share of Local Voice over time</h2>
         <svg class="trend" id="trend"></svg>
@@ -267,7 +268,12 @@ function confirmDialog(message,{title="Confirm deletion",okLabel="Delete"}={}){
 function colorFor(rank){ if(rank==null)return"#9e9e9e"; if(rank<=3)return"#1a9850"; if(rank<=10)return"#fee08b"; if(rank<=20)return"#f46d43"; return"#9e9e9e"; }
 // Floating pill at the top of the map saying what the pins currently show.
 function setMapLabel(html){ const el=$("mapLabel"); if(!el)return; if(html){el.innerHTML=html;el.classList.remove("hidden");}else{el.classList.add("hidden");} }
-function scanLabel(target,when){ return target?'"'+esc(target.keyword)+'" <span class="sub">— '+esc(target.name)+(when?' · '+new Date(when).toLocaleDateString():'')+'</span>':''; }
+function fmtM(m){ return m>=1000?(m/1000).toFixed(m%1000?1:0)+" km":Math.round(m)+" m"; }
+// "9×9 @ 1 km" — per-scan grid config, compact for rows and the map label.
+function dimsShort(gs,sp){ return gs?gs+"×"+gs+(sp?" @ "+fmtM(sp):""):""; }
+// "9×9 grid · 1 km spacing · covers ~8 km across" — for the history header.
+function dimsLong(gs,sp){ return gs?gs+"×"+gs+" grid"+(sp?" · "+fmtM(sp)+" spacing · covers ~"+fmtM((gs-1)*sp)+" across":""):""; }
+function scanLabel(target,when,dims){ return target?'"'+esc(target.keyword)+'" <span class="sub">— '+esc(target.name)+(when?' · '+new Date(when).toLocaleDateString():'')+(dims?' · '+dims:'')+'</span>':''; }
 
 let map=null, layer=null, chosen=null, currentTargetId=null, historyData=null;
 // Only one context may own the map at a time. A background scan draws only while
@@ -398,7 +404,7 @@ async function showScanById(scanId){
   renderMetrics(d.score); $("scanResult").classList.remove("hidden"); $("legendAbs").innerHTML=absLegend();
   const c=d.score.dominantCompetitor; $("competitors").innerHTML=c?"<b>Top competitor:</b> "+esc(c.name)+" — wins "+c.wins+" pins":"";
   const ctr=centre(d.points);
-  scanView={owner:mapOwner,center:ctr?[ctr.lat,ctr.lng]:null,zoom:13,pins:d.points,label:scanLabel(d.target,d.ranAt)};
+  scanView={owner:mapOwner,center:ctr?[ctr.lat,ctr.lng]:null,zoom:13,pins:d.points,label:scanLabel(d.target,d.ranAt,dimsShort(d.gridSize,d.spacingM))};
   if(currentView==='scan'){ scanView.owner=takeMap(); if(layer)layer.clearLayers(); if(map&&scanView.center)map.setView(scanView.center,13); d.points.forEach(drawPin); setMapLabel(scanView.label); }
 }
 function drawPin(p){
@@ -562,6 +568,7 @@ async function loadHistory(targetId){
   if(historyData.error){$("histEmpty").classList.remove("hidden");$("histEmpty").textContent=historyData.error;$("histBody").classList.add("hidden");return;}
   const {target,scans,annotations}=historyData;
   $("histTitle").textContent=target.name+' · "'+target.keyword+'"';
+  $("histMeta").textContent=target.device+" · "+dimsLong(target.grid_size,target.spacing_m);
   $("histBody").classList.remove("hidden");
   $("delFromHistory").onclick=async()=>{
     if(!await confirmDialog('Delete keyword “'+target.keyword+'” for '+target.name+' and its scan history? This cannot be undone.'))return;
@@ -572,14 +579,23 @@ async function loadHistory(targetId){
   $("cmpA").innerHTML=opts; $("cmpB").innerHTML=opts;
   if(scans.length>=2){ $("cmpA").selectedIndex=1; $("cmpB").selectedIndex=0; }
   $("scanList").innerHTML=scans.map((s,i)=>{const prev=scans[i+1];
+    const dims=dimsShort(s.grid_size||target.grid_size,s.spacing_m||target.spacing_m);
     return '<div class="scanrow"><span class="when">'+new Date(s.ran_at).toLocaleString()+'</span>'+
       solvChip(s.solv)+trendArrow(s.solv,prev?prev.solv:null)+
-      '<span class="sv">top3 '+pct(s.pct_top3)+' · med '+(s.median_rank??"—")+'</span> <button class="mini" data-scan="'+s.id+'">Map</button></div>';
+      '<span class="sv">top3 '+pct(s.pct_top3)+' · med '+(s.median_rank??"—")+(dims?' · '+dims:'')+'</span> <button class="mini" data-scan="'+s.id+'">Map</button>'+
+      '<button class="kebab" data-scanmenu="'+s.id+'" title="Scan actions">⋯</button></div>';
   }).join("")||'<div class="note">No scans yet.</div>';
-  $("scanList").querySelectorAll("[data-scan]").forEach(b=>b.onclick=async()=>{const d=await api.get("/api/scan-detail?id="+b.dataset.scan);renderAbsolute(d.points);setMapLabel(scanLabel(target,d.ranAt));renderMetrics(d.score);$("legendDiff").classList.add("hidden");});
+  $("scanList").querySelectorAll("[data-scanmenu]").forEach(b=>b.onclick=(e)=>{
+    e.stopPropagation();
+    openMenu(b,[{label:"🗑 Delete this scan",danger:true,fn:async()=>{
+      if(!await confirmDialog("Delete this scan from history? Trends and comparisons will no longer include it. This cannot be undone.",{title:"Delete scan"}))return;
+      await api.del("/api/scan-detail?id="+b.dataset.scanmenu); loadHistory(currentTargetId); loadBusinesses&&loadBusinesses();
+    }}]);
+  });
+  $("scanList").querySelectorAll("[data-scan]").forEach(b=>b.onclick=async()=>{const d=await api.get("/api/scan-detail?id="+b.dataset.scan);renderAbsolute(d.points);setMapLabel(scanLabel(target,d.ranAt,dimsShort(d.gridSize,d.spacingM)));renderMetrics(d.score);$("legendDiff").classList.add("hidden");});
   renderAnnos(annotations);
   // Load latest scan on map by default.
-  if(scans[0]){const d=await api.get("/api/scan-detail?id="+scans[0].id);renderAbsolute(d.points);setMapLabel(scanLabel(target,d.ranAt));renderMetrics(d.score);}
+  if(scans[0]){const d=await api.get("/api/scan-detail?id="+scans[0].id);renderAbsolute(d.points);setMapLabel(scanLabel(target,d.ranAt,dimsShort(d.gridSize,d.spacingM)));renderMetrics(d.score);}
 }
 $("cmpBtn").onclick=async()=>{
   const a=$("cmpA").value,b=$("cmpB").value; if(!a||!b||a===b){alert("Pick two different scans");return;}

@@ -65,15 +65,17 @@ export interface ScanRow {
   solv: number; pct_top3: number; pct_top10: number; pct_found: number;
   median_rank: number | null; max_radius_m: number; strongest: string | null;
   weakest: string | null; dominant_json: string | null; est_cost: number; points_json: string;
+  grid_size: number | null; spacing_m: number | null;
 }
 
 export async function insertScan(env: DBEnv, s: ScanRow): Promise<void> {
   await env.DB.prepare(
-    `INSERT INTO scans (id,target_id,ran_at,data_source,solv,pct_top3,pct_top10,pct_found,median_rank,max_radius_m,strongest,weakest,dominant_json,est_cost,points_json)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO scans (id,target_id,ran_at,data_source,solv,pct_top3,pct_top10,pct_found,median_rank,max_radius_m,strongest,weakest,dominant_json,est_cost,points_json,grid_size,spacing_m)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   ).bind(
     s.id, s.target_id, s.ran_at, s.data_source, s.solv, s.pct_top3, s.pct_top10, s.pct_found,
     s.median_rank, s.max_radius_m, s.strongest, s.weakest, s.dominant_json, s.est_cost, s.points_json,
+    s.grid_size, s.spacing_m,
   ).run();
 }
 
@@ -90,7 +92,7 @@ export async function listTargets(env: DBEnv): Promise<any[]> {
 
 export async function listScans(env: DBEnv, targetId: string): Promise<any[]> {
   const { results } = await env.DB.prepare(
-    `SELECT id,ran_at,solv,pct_top3,pct_top10,pct_found,median_rank,strongest,weakest,dominant_json,est_cost
+    `SELECT id,ran_at,solv,pct_top3,pct_top10,pct_found,median_rank,strongest,weakest,dominant_json,est_cost,grid_size,spacing_m
      FROM scans WHERE target_id=? ORDER BY ran_at DESC`,
   ).bind(targetId).all();
   return results ?? [];
